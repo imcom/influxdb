@@ -5,7 +5,7 @@ package parser
 import "C"
 
 import (
-	"common"
+	"bytes"
 	"fmt"
 	"math"
 	"reflect"
@@ -217,6 +217,34 @@ func (self *BasicQuery) GetQueryString() string {
 
 func (self *SelectQuery) GetColumnNames() []*Value {
 	return self.ColumnNames
+}
+
+func (self *SelectQuery) GetQueryString() string {
+	buffer := bytes.NewBufferString("")
+	fmt.Fprintf(buffer, "select ")
+
+	for _, column := range self.ColumnNames {
+		fmt.Fprintf(buffer, "%s ", column.GetString())
+	}
+
+	fmt.Fprintf(buffer, "from %s", self.FromClause.GetString())
+
+	if self.GetWhereCondition() != nil {
+		fmt.Fprintf(buffer, " where %s", self.GetWhereCondition().GetString())
+	}
+	if self.GetGroupByClause() != nil && len(self.GetGroupByClause().Elems) > 0 {
+		fmt.Fprintf(buffer, " group by %s", self.GetGroupByClause().GetString())
+	}
+
+	if self.Limit > 0 {
+		fmt.Fprintf(buffer, " limit %d", self.Limit)
+	}
+
+	if self.Ascending {
+		fmt.Fprintf(buffer, " order asc")
+	}
+
+	return buffer.String()
 }
 
 func (self *SelectQuery) IsSinglePointQuery() bool {
