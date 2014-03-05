@@ -23,10 +23,12 @@ const (
 	ValueWildcard               = C.VALUE_WILDCARD
 	ValueFunctionCall           = C.VALUE_FUNCTION_CALL
 	ValueExpression             = C.VALUE_EXPRESSION
+	ValueIntoName               = C.VALUE_INTO_NAME
 )
 
 type Value struct {
 	Name          string
+	Alias         string
 	Type          ValueType
 	Elems         []*Value
 	compiledRegex *regexp.Regexp
