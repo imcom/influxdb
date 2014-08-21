@@ -1,5 +1,6 @@
 *~
 src/
+.idea
 
 config.json
 /test
