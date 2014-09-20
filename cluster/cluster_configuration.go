@@ -125,19 +125,16 @@ func NewClusterConfiguration(
 	}
 }
 
-func (self *ClusterConfiguration) DoesShardSpaceExist(space *ShardSpace) error {
+func (self *ClusterConfiguration) ShardSpaceExists(space *ShardSpace) bool {
 	self.shardLock.RLock()
 	defer self.shardLock.RUnlock()
-	if _, ok := self.DatabaseReplicationFactors[space.Database]; !ok {
-		return fmt.Errorf("Database %s doesn't exist", space.Database)
-	}
 	dbSpaces := self.databaseShardSpaces[space.Database]
 	for _, s := range dbSpaces {
 		if s.Name == space.Name {
-			return fmt.Errorf("Shard space %s exists", space.Name)
+			return true
 		}
 	}
-	return nil
+	return false
 }
 
 func (self *ClusterConfiguration) SetShardCreator(shardCreator ShardCreator) {
@@ -162,6 +159,12 @@ func (self *ClusterConfiguration) GetShardSpaces() []*ShardSpace {
 		spaces = append(spaces, databaseSpaces...)
 	}
 	return spaces
+}
+
+func (self *ClusterConfiguration) GetShardSpacesForDatabase(database string) []*ShardSpace {
+	self.shardLock.RLock()
+	defer self.shardLock.RUnlock()
+	return self.databaseShardSpaces[database]
 }
 
 // called by the server, this will wake up every 10 mintues to see if it should
@@ -614,6 +617,17 @@ type SavedConfiguration struct {
 
 func (self *ClusterConfiguration) Save() ([]byte, error) {
 	log.Debug("Dumping the cluster configuration")
+	data := self.SerializableConfiguration()
+	b := bytes.NewBuffer(nil)
+	err := gob.NewEncoder(b).Encode(&data)
+	if err != nil {
+		return nil, err
+	}
+
+	return b.Bytes(), nil
+}
+
+func (self *ClusterConfiguration) SerializableConfiguration() *SavedConfiguration {
 	data := &SavedConfiguration{
 		Databases:           make(map[string]uint8, len(self.DatabaseReplicationFactors)),
 		Admins:              self.clusterAdmins,
@@ -629,14 +643,7 @@ func (self *ClusterConfiguration) Save() ([]byte, error) {
 	for k := range self.DatabaseReplicationFactors {
 		data.Databases[k] = 0
 	}
-
-	b := bytes.NewBuffer(nil)
-	err := gob.NewEncoder(b).Encode(&data)
-	if err != nil {
-		return nil, err
-	}
-
-	return b.Bytes(), nil
+	return data
 }
 
 func (self *ClusterConfiguration) convertShardsToNewShardData(shards []*ShardData) []*NewShardData {
@@ -692,7 +699,11 @@ func (self *ClusterConfiguration) Recovery(b []byte) error {
 	self.clusterAdmins = data.Admins
 	self.dbUsers = data.DbUsers
 	self.servers = data.Servers
-	self.MetaStore.UpdateFromSnapshot(data.MetaStore)
+
+	// if recovering from a snapshot from version 0.7.x the metastore will be nil. Fix #868 https://github.com/influxdb/influxdb/issues/868
+	if data.MetaStore != nil {
+		self.MetaStore.UpdateFromSnapshot(data.MetaStore)
+	}
 
 	for _, server := range self.servers {
 		log.Info("Checking whether %s is the local server %s", server.RaftName, self.LocalRaftName)
@@ -727,6 +738,10 @@ func (self *ClusterConfiguration) Recovery(b []byte) error {
 	}
 	// map the shards to their spaces
 	self.databaseShardSpaces = data.DatabaseShardSpaces
+	// we need this if recovering from a snapshot from 0.7.x
+	if data.DatabaseShardSpaces == nil {
+		self.databaseShardSpaces = make(map[string][]*ShardSpace)
+	}
 	for _, spaces := range self.databaseShardSpaces {
 		for _, space := range spaces {
 			spaceShards := make([]*ShardData, 0)
@@ -782,18 +797,6 @@ func (self *ClusterConfiguration) LastContinuousQueryRunTime() time.Time {
 
 func (self *ClusterConfiguration) SetLastContinuousQueryRunTime(t time.Time) {
 	self.continuousQueryTimestamp = t
-}
-
-func (self *ClusterConfiguration) GetMapForJsonSerialization() map[string]interface{} {
-	jsonObject := make(map[string]interface{})
-	dbs := make([]string, 0)
-	for db := range self.DatabaseReplicationFactors {
-		dbs = append(dbs, db)
-	}
-	jsonObject["databases"] = dbs
-	jsonObject["cluster_admins"] = self.clusterAdmins
-	jsonObject["database_users"] = self.dbUsers
-	return jsonObject
 }
 
 func (self *ClusterConfiguration) createDefaultShardSpace(database string) (*ShardSpace, error) {
@@ -905,7 +908,7 @@ func (self *ClusterConfiguration) getStartAndEndBasedOnDuration(microsecondsEpoc
 	return &startTime, &endTime
 }
 
-func (self *ClusterConfiguration) GetShardsForQuery(querySpec *parser.QuerySpec) []*ShardData {
+func (self *ClusterConfiguration) GetShardsForQuery(querySpec *parser.QuerySpec) Shards {
 	shards := self.getShardsToMatchQuery(querySpec)
 	shards = self.getShardRange(querySpec, shards)
 	if querySpec.IsAscending() {
@@ -1278,7 +1281,7 @@ func (self *ClusterConfiguration) removeShard(shard *ShardData) {
 
 func (self *ClusterConfiguration) AddShardSpace(space *ShardSpace) error {
 	if space.Name != DEFAULT_SHARD_SPACE_NAME {
-		err := space.Validate(self)
+		err := space.Validate(self, true)
 		if err != nil {
 			return err
 		}
@@ -1306,6 +1309,17 @@ func (self *ClusterConfiguration) AddShardSpace(space *ShardSpace) error {
 	copy(newSpaces[1:], databaseSpaces)
 	newSpaces[0] = space
 	self.databaseShardSpaces[space.Database] = newSpaces
+	return nil
+}
+
+func (self *ClusterConfiguration) UpdateShardSpace(space *ShardSpace) error {
+	self.shardLock.Lock()
+	defer self.shardLock.Unlock()
+	oldSpace := self.getShardSpaceByDatabaseAndName(space.Database, space.Name)
+	if oldSpace == nil {
+		return nil
+	}
+	oldSpace.UpdateFromSpace(space)
 	return nil
 }
 

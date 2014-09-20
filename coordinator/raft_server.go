@@ -48,7 +48,7 @@ type RaftServer struct {
 	closing                  bool
 	config                   *configuration.Configuration
 	notLeader                chan bool
-	coordinator              *CoordinatorImpl
+	coordinator              *Coordinator
 	processContinuousQueries bool
 }
 
@@ -113,6 +113,26 @@ func NewRaftServer(config *configuration.Configuration, clusterConfig *cluster.C
 
 func (s *RaftServer) GetRaftName() string {
 	return s.name
+}
+
+func (s *RaftServer) GetLeaderRaftName() string {
+	return s.raftServer.Leader()
+}
+
+func (s *RaftServer) IsLeaderByRaftName(name string) bool {
+	//s.raftServer.State() == raft.Leader
+	return s.raftServer.Leader() == name
+}
+
+/**
+* return a consistant leader raft connection string when called on all living nodes include leader.
+ */
+func (s *RaftServer) GetLeaderRaftConnectString() (string, bool) {
+	if s.IsLeaderByRaftName(s.name) {
+		return s.config.RaftConnectionString(), true
+	} else {
+		return s.leaderConnectString()
+	}
 }
 
 func (s *RaftServer) leaderConnectString() (string, bool) {
@@ -301,7 +321,7 @@ func (s *RaftServer) ChangeConnectionString(raftName, protobufConnectionString, 
 	return err
 }
 
-func (s *RaftServer) AssignCoordinator(coordinator *CoordinatorImpl) error {
+func (s *RaftServer) AssignCoordinator(coordinator *Coordinator) error {
 	s.coordinator = coordinator
 	return nil
 }
@@ -485,6 +505,14 @@ func (s *RaftServer) checkContinuousQueries() {
 
 			currentBoundary := runTime.Truncate(*duration)
 			lastRun := s.clusterConfig.LastContinuousQueryRunTime()
+			if lastRun.IsZero() && !query.GetIntoClause().Backfill {
+				// don't backfill for this continuous query, leave it for next
+				// iteration. Otherwise, we're going to run the continuous
+				// query from lastRun which is the beginning of time until
+				// now. This is equivalent to backfilling.
+				continue
+			}
+
 			lastBoundary := lastRun.Truncate(*duration)
 
 			if currentBoundary.After(lastRun) {
@@ -515,11 +543,7 @@ func (s *RaftServer) runContinuousQuery(db string, query *parser.SelectQuery, st
 	targetName := intoClause.Target.Name
 	queryString := query.GetQueryStringWithTimesAndNoIntoClause(start, end)
 
-	f := func(series *protocol.Series) error {
-		return s.coordinator.InterpolateValuesAndCommit(query.GetQueryString(), db, series, targetName, true)
-	}
-
-	writer := NewContinuousQueryWriter(f)
+	writer := NewContinuousQueryWriter(s.coordinator, db, targetName, query)
 	s.coordinator.RunQuery(clusterAdmin, db, queryString, writer)
 }
 
@@ -541,7 +565,6 @@ func (s *RaftServer) Serve(l net.Listener) error {
 		Handler: s.router,
 	}
 
-	s.router.HandleFunc("/cluster_config", s.configHandler).Methods("GET")
 	s.router.HandleFunc("/join", s.joinHandler).Methods("POST")
 	s.router.HandleFunc("/process_command/{command_type}", s.processCommandHandler).Methods("POST")
 
@@ -674,14 +697,6 @@ func (s *RaftServer) joinHandler(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (s *RaftServer) configHandler(w http.ResponseWriter, req *http.Request) {
-	js, err := json.Marshal(s.clusterConfig.GetMapForJsonSerialization())
-	if err != nil {
-		log.Error("ERROR marshalling config: ", err)
-	}
-	w.Write(js)
-}
-
 func (s *RaftServer) marshalAndDoCommandFromBody(command raft.Command, req *http.Request) (interface{}, error) {
 	if err := json.NewDecoder(req.Body).Decode(&command); err != nil {
 		return nil, err
@@ -799,6 +814,12 @@ func (self *RaftServer) CreateShardSpace(shardSpace *cluster.ShardSpace) error {
 
 func (self *RaftServer) DropShardSpace(database, name string) error {
 	command := NewDropShardSpaceCommand(database, name)
+	_, err := self.doOrProxyCommand(command)
+	return err
+}
+
+func (self *RaftServer) UpdateShardSpace(shardSpace *cluster.ShardSpace) error {
+	command := NewUpdateShardSpaceCommand(shardSpace)
 	_, err := self.doOrProxyCommand(command)
 	return err
 }

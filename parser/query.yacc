@@ -70,12 +70,12 @@ value *create_expression_value(char *operator, size_t size, ...) {
 
 // declare that we want a reentrant parser
 %define      api.pure
-%parse-param {query *q}
+%parse-param {queries *q}
 %parse-param {void *scanner}
 %lex-param   {void *scanner}
 
 // define types of tokens (terminals)
-%token          SELECT DELETE FROM WHERE EQUAL GROUP BY LIMIT ORDER ASC DESC MERGE INNER JOIN AS LIST SERIES INTO CONTINUOUS_QUERIES CONTINUOUS_QUERY DROP DROP_SERIES EXPLAIN UNKNOWN
+%token          SELECT DELETE FROM WHERE EQUAL GROUP BY LIMIT ORDER ASC DESC MERGE INNER JOIN AS LIST SERIES INTO CONTINUOUS_QUERIES CONTINUOUS_QUERY DROP DROP_SERIES EXPLAIN UNKNOWN INCLUDE SPACES
 %token <string> STRING_VALUE INT_VALUE FLOAT_VALUE BOOLEAN_VALUE TABLE_NAME SIMPLE_NAME INTO_NAME REGEX_OP
 %token <string>  NEGATION_REGEX_OP REGEX_STRING INSENSITIVE_REGEX_STRING DURATION
 
@@ -127,20 +127,20 @@ value *create_expression_value(char *operator, size_t size, ...) {
 ALL_QUERIES:
         QUERY
         {
-          *q = *$1;
-          free($1);
+          q->qs = realloc(q->qs, (q->size + 1) * sizeof(query));
+          q->qs[q->size++] = $1;
         }
         |
         QUERY ';'
         {
-          *q = *$1;
-          free($1);
+          q->qs = realloc(q->qs, (q->size + 1) * sizeof(query));
+          q->qs[q->size++] = $1;
         }
         |
         QUERY ';' ALL_QUERIES
         {
-          *q = *$1;
-          free($1);
+          q->qs = realloc(q->qs, (q->size + 1) * sizeof(query));
+          q->qs[q->size++] = $1;
         }
 
 QUERY:
@@ -160,6 +160,22 @@ QUERY:
         {
           $$ = calloc(1, sizeof(query));
           $$->drop_query = $1;
+        }
+        |
+        LIST SERIES INCLUDE SPACES
+        {
+          $$ = calloc(1, sizeof(query));
+          $$->list_series_query = calloc(1, sizeof(list_series_query));
+          $$->list_series_query->include_spaces = TRUE;
+        }
+        |
+        LIST SERIES REGEX_VALUE INCLUDE SPACES
+        {
+          $$ = calloc(1, sizeof(query));
+          $$->list_series_query = calloc(1, sizeof(list_series_query));
+          $$->list_series_query->has_regex = TRUE;
+          $$->list_series_query->include_spaces = TRUE;
+          $$->list_series_query->regex = $3;
         }
         |
         LIST SERIES
@@ -702,10 +718,10 @@ BOOL_OPERATION:
 void *yy_scan_string(char *, void *);
 void yy_delete_buffer(void *, void *);
 
-query
+queries
 parse_query(char *const query_s)
 {
-  query q = {NULL, NULL, NULL, NULL, FALSE, FALSE, NULL};
+  queries q = {0, NULL};
   void *scanner;
   yylex_init(&scanner);
 #ifdef DEBUG
@@ -719,7 +735,7 @@ parse_query(char *const query_s)
   return q;
 }
 
-int yyerror(YYLTYPE *locp, query *q, void *s, char *err) {
+int yyerror(YYLTYPE *locp, queries *q, void *s, char *err) {
   q->error = malloc(sizeof(error));
   q->error->err = strdup(err);
   q->error->first_line = locp->first_line;

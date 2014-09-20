@@ -73,6 +73,20 @@ func (self *QueryParserSuite) TestParseBasicSelectQuery(c *C) {
 	}
 }
 
+func (self *QueryParserSuite) TestGetQueryStringWithDoubleQuotes(c *C) {
+	q := `select dashboard from "grafana.dashboard_VWx0cmFNUg=="`
+	query, err := ParseQuery(q)
+	c.Assert(err, IsNil)
+	c.Assert(query, HasLen, 1)
+	actualQ := query[0].GetQueryStringWithTimeCondition()
+	actualQuery, err := ParseQuery(actualQ)
+	c.Assert(err, IsNil)
+	c.Assert(actualQuery, HasLen, 1)
+	query[0].SelectQuery.startTimeSpecified = false
+	actualQuery[0].SelectQuery.startTimeSpecified = false
+	c.Assert(actualQuery, DeepEquals, query)
+}
+
 func (self *QueryParserSuite) TestGetQueryString(c *C) {
 	for _, query := range []string{
 		"select value from t",
@@ -100,8 +114,6 @@ func (self *QueryParserSuite) TestGetQueryString(c *C) {
 		actualQuery, err := ParseQuery(queryString)
 		c.Assert(err, IsNil)
 		c.Assert(actualQuery, HasLen, 1)
-		expectedQuery[0].QueryString = ""
-		actualQuery[0].QueryString = ""
 		if expectedQuery[0].DeleteQuery != nil {
 			expectedQuery[0].DeleteQuery.startTimeSpecified = false
 			actualQuery[0].DeleteQuery.startTimeSpecified = false
@@ -283,6 +295,7 @@ func (self *QueryParserSuite) TestParseListSeries(c *C) {
 	listSeriesQuery := queries[0].GetListSeriesQuery()
 	c.Assert(listSeriesQuery, NotNil)
 	c.Assert(listSeriesQuery.HasRegex(), Equals, false)
+	c.Assert(listSeriesQuery.IncludeSpaces, Equals, false)
 
 	// test the case sensitive and case insensitive list series
 	for i := 0; i < 2; i++ {
@@ -304,7 +317,30 @@ func (self *QueryParserSuite) TestParseListSeries(c *C) {
 			regularExpression, _ = regexp.Compile("^foo.*")
 		}
 		c.Assert(listSeriesQuery.GetRegex(), DeepEquals, regularExpression)
+		c.Assert(listSeriesQuery.IncludeSpaces, Equals, false)
 	}
+}
+
+func (self *QueryParserSuite) TestParseListSeriesInludeSpaces(c *C) {
+	queries, err := ParseQuery("list series include spaces")
+	c.Assert(err, IsNil)
+	c.Assert(queries, HasLen, 1)
+	c.Assert(queries[0].IsListQuery(), Equals, true)
+	listSeriesQuery := queries[0].GetListSeriesQuery()
+	c.Assert(listSeriesQuery, NotNil)
+	c.Assert(listSeriesQuery.HasRegex(), Equals, false)
+	c.Assert(listSeriesQuery.IncludeSpaces, Equals, true)
+
+	queries, err = ParseQuery("list series /foo.*/ include spaces")
+	c.Assert(err, IsNil)
+	c.Assert(queries, HasLen, 1)
+	c.Assert(queries[0].IsListQuery(), Equals, true)
+	listSeriesQuery = queries[0].GetListSeriesQuery()
+	c.Assert(listSeriesQuery, NotNil)
+	c.Assert(listSeriesQuery.HasRegex(), Equals, true)
+	c.Assert(listSeriesQuery.IncludeSpaces, Equals, true)
+	regularExpression, _ := regexp.Compile("foo.*")
+	c.Assert(listSeriesQuery.GetRegex(), DeepEquals, regularExpression)
 }
 
 // issue #267
@@ -869,10 +905,7 @@ func (self *QueryParserSuite) TestIsSinglePointQuery(c *C) {
 }
 
 func (self *QueryParserSuite) TestParseContinuousQueryCreation(c *C) {
-	query := "select * from foo into bar;"
-	q, err := ParseSelectQuery(query)
-	c.Assert(err, IsNil)
-	c.Assert(q.IsContinuousQuery(), Equals, true)
+	q := getContinuousQuery("select * from foo into bar;", c)
 	c.Assert(q.IsValidContinuousQuery(), Equals, true)
 	clause := q.GetIntoClause()
 	c.Assert(clause.Target, DeepEquals, &Value{"bar", "", ValueSimpleName, nil, nil, false})
@@ -910,37 +943,33 @@ func (self *QueryParserSuite) TestParseRecursiveContinuousQueries(c *C) {
 	c.Assert(q.IsNonRecursiveContinuousQuery(), Equals, false)
 }
 
-func (self *QueryParserSuite) TestParseInterpolatedContinuousQueryCreation(c *C) {
-	query := "select * from foo into bar.[c4];"
-	q, err := ParseSelectQuery(query)
+func getContinuousQuery(q string, c *C) *SelectQuery {
+	queries, err := ParseQuery(q)
 	c.Assert(err, IsNil)
-	c.Assert(q.IsContinuousQuery(), Equals, true)
+	c.Assert(queries, HasLen, 1)
+	query := queries[0]
+	c.Assert(query.IsContinuousQuery(), Equals, true)
+	return query.SelectQuery
+}
+
+func (self *QueryParserSuite) TestParseInterpolatedContinuousQueryCreation(c *C) {
+	q := getContinuousQuery("select * from foo into bar.[c4];", c)
 	clause := q.GetIntoClause()
 	c.Assert(clause.Target, DeepEquals, &Value{"bar.[c4]", "", ValueIntoName, nil, nil, false})
 
-	query = "select * from foo into [c5].bar.[c4];"
-	q, err = ParseSelectQuery(query)
-	c.Assert(err, IsNil)
-	c.Assert(q.IsContinuousQuery(), Equals, true)
+	q = getContinuousQuery("select * from foo into [c5].bar.[c4];", c)
 	clause = q.GetIntoClause()
 	c.Assert(clause.Target, DeepEquals, &Value{"[c5].bar.[c4]", "", ValueIntoName, nil, nil, false})
 
-	query = "select average(c4), count(c5) from s3 group by time(1h) into [average].[count];"
-	q, err = ParseSelectQuery(query)
-	c.Assert(err, IsNil)
-	c.Assert(q.IsContinuousQuery(), Equals, true)
+	q = getContinuousQuery("select average(c4), count(c5) from s3 group by time(1h) into [average].[count];", c)
 	clause = q.GetIntoClause()
 	c.Assert(clause.Target, DeepEquals, &Value{"[average].[count]", "", ValueIntoName, nil, nil, false})
 
-	query = "select * from foo into :series_name.foo;"
-	q, err = ParseSelectQuery(query)
-	c.Assert(err, IsNil)
-	c.Assert(q.IsContinuousQuery(), Equals, true)
+	q = getContinuousQuery("select * from foo into :series_name.foo;", c)
 	clause = q.GetIntoClause()
 	c.Assert(clause.Target, DeepEquals, &Value{":series_name.foo", "", ValueIntoName, nil, nil, false})
 
-	query = "select * from foo into ]bar"
-	q, err = ParseSelectQuery(query)
+	_, err := ParseQuery("select * from foo into ]bar")
 	c.Assert(err, NotNil)
 }
 
@@ -962,6 +991,19 @@ func (self *QueryParserSuite) TestParseContinuousQueryList(c *C) {
 	c.Assert(queries[0].IsListContinuousQueriesQuery(), Equals, true)
 }
 
+// For issue #768
+func (self *QueryParserSuite) TestMinusWithoutSpace(c *C) {
+	query := "select val1-val0 from foo;"
+	q, err := ParseSelectQuery(query)
+	c.Assert(err, IsNil)
+	c.Assert(q.GetColumnNames(), HasLen, 1)
+	column := q.GetColumnNames()[0]
+	c.Assert(column.Type, Equals, ValueType(ValueExpression))
+	c.Assert(column.Elems[0].Name, Equals, "val1")
+	c.Assert(column.Elems[1].Name, Equals, "val0")
+	c.Assert(column.Name, Equals, "-")
+}
+
 // For issue #466 - allow all characters in column names - https://github.com/influxdb/influxdb/issues/267
 func (self *QueryParserSuite) TestParseColumnWithPeriodOrDash(c *C) {
 	query := "select count(\"column-a.foo\") as \"count-column-a.foo\" from seriesA;"
@@ -979,6 +1021,7 @@ func (self *QueryParserSuite) TestQueryErrorShouldHaveQueryString(c *C) {
 	query := "select ! from foo;"
 	_, err := ParseSelectQuery(query)
 	e, _ := err.(*QueryError)
+	c.Assert(e, NotNil)
 	c.Assert(e.queryString, Equals, query)
 }
 

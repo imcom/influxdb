@@ -35,7 +35,8 @@ type ServerConnection interface {
 	Connect()
 	Close()
 	ClearRequests()
-	MakeRequest(request *protocol.Request, responseStream chan *protocol.Response) error
+	MakeRequest(*protocol.Request, ResponseChannel) error
+	CancelRequest(*protocol.Request)
 }
 
 type ServerState int
@@ -47,6 +48,22 @@ const (
 	Running
 	Potential
 )
+
+func (self *ClusterServer) GetStateName() (stateName string) {
+	switch {
+	case self.State == LoadingRingData:
+		return "LoadingRingData"
+	case self.State == SendingRingData:
+		return "SendingRingData"
+	case self.State == DeletingOldData:
+		return "DeletingOldData"
+	case self.State == Running:
+		return "Running"
+	case self.State == Potential:
+		return "Potential"
+	}
+	return "UNKNOWN"
+}
 
 func NewClusterServer(raftName, raftConnectionString, protobufConnectionString string, connection ServerConnection, config *c.Configuration) *ClusterServer {
 
@@ -92,21 +109,20 @@ func (self *ClusterServer) Connect() {
 	self.connection.Connect()
 }
 
-func (self *ClusterServer) MakeRequest(request *protocol.Request, responseStream chan *protocol.Response) {
-	err := self.connection.MakeRequest(request, responseStream)
+func (self *ClusterServer) MakeRequest(request *protocol.Request, responseStream chan<- *protocol.Response) {
+	rc := NewResponseChannelWrapper(responseStream)
+	err := self.connection.MakeRequest(request, rc)
 	if err != nil {
-		message := err.Error()
-		select {
-		case responseStream <- &protocol.Response{Type: &endStreamResponse, ErrorMessage: &message}:
-		default:
-		}
+		log.Error("Canceling request: %s", err)
+		self.connection.CancelRequest(request)
 		self.markServerAsDown()
 	}
 }
 
 func (self *ClusterServer) Write(request *protocol.Request) error {
 	responseChan := make(chan *protocol.Response, 1)
-	err := self.connection.MakeRequest(request, responseChan)
+	rc := NewResponseChannelWrapper(responseChan)
+	err := self.connection.MakeRequest(request, rc)
 	if err != nil {
 		return err
 	}
@@ -152,7 +168,7 @@ func (self *ClusterServer) heartbeat() {
 		}
 
 		if !self.isUp {
-			log.Warn("Server marked as up. Hearbeat succeeded")
+			log.Warn("Server marked as up. Heartbeat succeeded")
 		}
 		// otherwise, reset the backoff and mark the server as up
 		self.isUp = true
@@ -186,7 +202,7 @@ func (self *ClusterServer) markServerAsDown() {
 
 func (self *ClusterServer) handleHeartbeatError(err error) {
 	if self.isUp {
-		log.Warn("Server marked as down. Hearbeat error for server: %d - %s: %s", self.Id, self.ProtobufConnectionString, err)
+		log.Warn("Server marked as down. Heartbeat error for server: %d - %s: %s", self.Id, self.ProtobufConnectionString, err)
 	}
 	self.markServerAsDown()
 	self.Backoff *= 2

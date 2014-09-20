@@ -5,10 +5,12 @@ import (
 	"encoding/binary"
 	"io"
 	"net"
-	"testing"
 	"time"
 
+	"launchpad.net/gocheck"
+
 	log "code.google.com/p/log4go"
+	"github.com/influxdb/influxdb/cluster"
 	"github.com/influxdb/influxdb/protocol"
 )
 
@@ -60,7 +62,7 @@ func (prs *PingResponseServer) handleConnection(conn net.Conn) {
 
 		switch *request.Type {
 		case protocol.Request_HEARTBEAT:
-			response := &protocol.Response{RequestId: request.Id, Type: &heartbeatResponse}
+			response := &protocol.Response{RequestId: request.Id, Type: protocol.Response_HEARTBEAT.Enum()}
 
 			data, err := response.Encode()
 			if err != nil {
@@ -76,7 +78,7 @@ func (prs *PingResponseServer) handleConnection(conn net.Conn) {
 	conn.Close()
 }
 
-func FakeHearbeatServer() *PingResponseServer {
+func FakeHeartbeatServer() *PingResponseServer {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		panic(err)
@@ -86,19 +88,24 @@ func FakeHearbeatServer() *PingResponseServer {
 	return &prs
 }
 
-func BenchmarkSingle(b *testing.B) {
+type ProtobufClientSuite struct{}
+
+var _ = gocheck.Suite(&ProtobufClient{})
+
+func (self *ProtobufClientSuite) BenchmarkSingle(c *gocheck.C) {
 	var HEARTBEAT_TYPE = protocol.Request_HEARTBEAT
-	prs := FakeHearbeatServer()
+	prs := FakeHeartbeatServer()
 	client := NewProtobufClient(prs.Listener.Addr().String(), time.Second)
 	client.Connect()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	c.ResetTimer()
+	for i := 0; i < c.N; i++ {
 		responseChan := make(chan *protocol.Response, 1)
 		heartbeatRequest := &protocol.Request{
 			Type:     &HEARTBEAT_TYPE,
 			Database: protocol.String(""),
 		}
-		client.MakeRequest(heartbeatRequest, responseChan)
+		rcw := cluster.NewResponseChannelWrapper(responseChan)
+		client.MakeRequest(heartbeatRequest, rcw)
 		<-responseChan
 	}
 }

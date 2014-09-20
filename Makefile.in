@@ -118,7 +118,6 @@ hyperleveldb_deps    = $(hyperleveldb_dir)/.libs/libhyperleveldb.a
 
 profile=off
 ifneq ($(profile),off)
-CGO_LDFLAGS += -ltcmalloc -lprofiler
 GO_BUILD_TAGS += profile
 endif
 
@@ -149,6 +148,11 @@ endif
 race = off
 ifneq ($(race),off)
 	GO_BUILD_OPTIONS += -race
+endif
+
+benchmark = off
+ifneq ($(benchmark),off)
+	GOTEST_OPTS += --gocheck.b --gocheck.btime=30s
 endif
 
 ifneq ($(uname_S),Linux)
@@ -257,7 +261,7 @@ clean:
 only =
 verbose = off
 ifneq ($(only),)
-	GOTEST_OPTS = -gocheck.f '$(only)'
+	GOTEST_OPTS += -gocheck.f '$(only)'
 endif
 ifneq ($(verbose),off)
 	GOTEST_OPTS += -v -gocheck.v -gocheck.vv
@@ -270,9 +274,6 @@ endif
 
 timeout = 10m
 GOTEST_OPTS += -test.timeout=$(timeout)
-
-bench:
-	$(GO) test github.com/influxdb/influxdb/coordinator -test.bench=. -test.benchmem
 
 test: test_dependencies parser protobuf
 	$(GO) test $(test_packages) $(GOTEST_OPTS)
@@ -293,11 +294,11 @@ binary_package = packages/influxdb-$(version).$(arch).tar.gz
 ifeq ($(arch),386)
 	rpm_package = packages/influxdb-$(package_version)-1.i686.rpm
 	debian_package = packages/influxdb_$(version)_i686.deb
-	arch_args = -a i686
+	deb_args = -a i686
+	rpm_args = setarch i686
 else ifeq ($(arch),arm)
 	rpm_package = packages/influxdb-$(package_version)-1.armel.rpm
 	debian_package = packages/influxdb_$(version)_armel.deb
-	arch_args = -a armel
 else
 	rpm_package = packages/influxdb-$(package_version)-1.x86_64.rpm
 	debian_package = packages/influxdb_$(version)_amd64.deb
@@ -324,14 +325,14 @@ $(rpm_package): $(admin_dir)/build build
 	rm -rf out_rpm
 	mkdir -p out_rpm/opt/influxdb/versions/$(version)
 	cp -r build/* out_rpm/opt/influxdb/versions/$(version)
-	rvm 1.9.3@influxdb do bash -c "pushd out_rpm; fpm -s dir -t rpm $(arch_args) --after-install ../scripts/post_install.sh -n influxdb -v $(version) .; popd"
+	rvm 1.9.3@influxdb do bash -c "pushd out_rpm; $(rpm_args) fpm -s dir -t rpm --after-install ../scripts/post_install.sh -n influxdb -v $(version) .; popd"
 	mv out_rpm/$(shell basename $(rpm_package)) packages/
 
 $(debian_package): $(admin_dir)/build build
 	rm -rf out_rpm
 	mkdir -p out_rpm/opt/influxdb/versions/$(version)
 	cp -r build/* out_rpm/opt/influxdb/versions/$(version)
-	rvm 1.9.3@influxdb do bash -c "pushd out_rpm; fpm -s dir -t deb $(arch_args) --after-install ../scripts/post_install.sh -n influxdb -v $(version) .; popd"
+	rvm 1.9.3@influxdb do bash -c "pushd out_rpm; fpm -s dir -t deb $(deb_args) --after-install ../scripts/post_install.sh -n influxdb -v $(version) .; popd"
 	mv out_rpm/$(shell basename $(debian_package)) packages/
 
 $(source_package): dependencies
@@ -368,9 +369,9 @@ $(binary_package): $(admin_dir)/build build packages
 	cp config.sample.toml build/config.toml
 	sed -i 's/.\/admin/\/opt\/influxdb\/current\/admin/g' build/config.toml
 	sed -i 's/influxdb.log/\/opt\/influxdb\/shared\/log.txt/g' build/config.toml
-	sed -i 's/\${TMPDIR}\/influxdb\/development\/db/\/opt\/influxdb\/shared\/data\/db/g' build/config.toml
-	sed -i 's/\${TMPDIR}\/influxdb\/development\/raft/\/opt\/influxdb\/shared\/data\/raft/g' build/config.toml
-	sed -i 's/\${TMPDIR}\/influxdb\/development\/wal/\/opt\/influxdb\/shared\/data\/wal/g' build/config.toml
+	sed -i 's:${TMPDIR}/influxdb/development/db:/opt/influxdb/shared/data/db:g' build/config.toml
+	sed -i 's:${TMPDIR}/influxdb/development/raft:/opt/influxdb/shared/data/raft:g' build/config.toml
+	sed -i 's:${TMPDIR}/influxdb/development/wal:/opt/influxdb/shared/data/wal:g' build/config.toml
 	rm -f build/scripts/post_install.sh.bak
 	tar -czf $(binary_package) build/*
 
@@ -397,3 +398,6 @@ vet:
 
 format:
 	git ls-files | grep '.go$$' | xargs $(GOFMT) -w -s
+
+oracle:
+	$$GOPATH/bin/oracle $(oracle_args)

@@ -61,3 +61,6 @@ config.toml
 
 # test data files
 integration/migration_data/
+
+# goide project files
+.idea

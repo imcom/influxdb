@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"syscall"
+	"runtime"
 	"time"
 
 	influxdb "github.com/influxdb/influxdb/client"
@@ -41,7 +41,7 @@ func NewServer(configFile string, c *C) *Server {
 }
 
 func newServerCommon(configFile string, deleteData, ssl bool, c *C, args ...string) *Server {
-	config := configuration.LoadConfiguration("../" + configFile)
+	config, _ := configuration.LoadConfiguration("../" + configFile)
 	s := &Server{configFile: configFile, apiPort: config.ApiHttpPort, sslApiPort: config.ApiHttpSslPort, sslOnly: ssl, args: args}
 	if deleteData {
 		c.Assert(os.RemoveAll(config.DataDir), IsNil)
@@ -129,7 +129,11 @@ func (self *Server) GetClientWithUser(db, username, password string, c *C) *infl
 }
 
 func (self *Server) WriteData(data interface{}, c *C, precision ...influxdb.TimePrecision) {
-	client := self.GetClient("db1", c)
+	self.WriteDataToDatabase("db1", data, c, precision...)
+}
+
+func (self *Server) WriteDataToDatabase(db string, data interface{}, c *C, precision ...influxdb.TimePrecision) {
+	client := self.GetClient(db, c)
 	var series []*influxdb.Series
 	switch x := data.(type) {
 	case string:
@@ -182,6 +186,9 @@ func (self *Server) Start() error {
 
 	root := filepath.Join(dir, "..")
 	filename := filepath.Join(root, "influxdb")
+	if runtime.GOOS == "windows" {
+		filename += ".exe"
+	}
 	if self.configFile == "" {
 		self.configFile = "integration/test_config_single.toml"
 	}
@@ -208,7 +215,7 @@ func (self *Server) Stop() {
 		return
 	}
 
-	self.p.Signal(syscall.SIGTERM)
+	self.p.Kill()
 	self.p.Wait()
 	self.p = nil
 }
@@ -218,7 +225,7 @@ func (self *Server) SetSslOnly(sslOnly bool) {
 }
 
 func (self *Server) DoesWalExist() error {
-	config := configuration.LoadConfiguration("../" + self.configFile)
+	config, _ := configuration.LoadConfiguration("../" + self.configFile)
 	_, err := os.Stat(filepath.Join(config.WalDir, "log.1"))
 	return err
 }
@@ -360,16 +367,25 @@ func (self *Server) Request(method, url, data string, c *C) *http.Response {
 
 func (self *Server) RemoveAllContinuousQueries(db string, c *C) {
 	client := self.GetClient(db, c)
-	queries, err := client.GetContinuousQueries()
+	queries, err := client.Query("list continuous queries")
 	c.Assert(err, IsNil)
-	for _, q := range queries {
-		c.Assert(client.DeleteContinuousQueries(int(q["id"].(float64))), IsNil)
+	c.Assert(queries, HasLen, 1)
+	maps := ToMap(queries[0])
+	buffer := bytes.NewBufferString("")
+	if len(maps) == 0 {
+		return
 	}
+	for _, m := range maps {
+		fmt.Fprintf(buffer, "drop continuous query %v;", m["id"])
+	}
+	_, err = client.Query(buffer.String())
+	c.Assert(err, IsNil)
 }
 
 func (self *Server) AssertContinuousQueryCount(db string, count int, c *C) {
 	client := self.GetClient(db, c)
-	queries, err := client.GetContinuousQueries()
+	queries, err := client.Query("list continuous queries")
 	c.Assert(err, IsNil)
-	c.Assert(queries, HasLen, count)
+	c.Assert(queries, HasLen, 1)
+	c.Assert(queries[0].Points, HasLen, count)
 }
