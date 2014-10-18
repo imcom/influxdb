@@ -51,8 +51,6 @@ func (self *Coordinator) RunQuery(user common.User, database string, queryString
 	}
 
 	for _, query := range q {
-		// runSingleQuery shouldn't close the processor in case there are
-		// other queries to be run
 		err := self.runSingleQuery(user, database, query, p)
 		if err != nil {
 			return err
@@ -225,10 +223,11 @@ func (self *Coordinator) shouldQuerySequentially(shards cluster.Shards, querySpe
 }
 
 func (self *Coordinator) getShardsAndProcessor(querySpec *parser.QuerySpec, writer engine.Processor) ([]*cluster.ShardData, engine.Processor, error) {
-	shards := self.clusterConfiguration.GetShardsForQuery(querySpec)
+	shards, err := self.clusterConfiguration.GetShardsForQuery(querySpec)
+	if err != nil {
+		return nil, nil, err
+	}
 	shouldAggregateLocally := shards.ShouldAggregateLocally(querySpec)
-
-	var err error
 
 	q := querySpec.SelectQuery()
 	if q == nil {
@@ -277,7 +276,7 @@ func (self *Coordinator) runQuerySpec(querySpec *parser.QuerySpec, p engine.Proc
 	}
 
 	if len(shards) == 0 {
-		return fmt.Errorf("Couldn't look up columns")
+		return processor.Close()
 	}
 
 	shardConcurrentLimit := self.config.ConcurrentShardQueryLimit
