@@ -211,39 +211,13 @@ ifeq ($(uname_S),Linux)
 	$(MAKE) V=1"
 endif
 
-proto_dependency  = code.google.com/p/goprotobuf/protoc-gen-go
-
-dependencies = code.google.com/p/go.crypto/bcrypt \
-code.google.com/p/goprotobuf/proto \
-code.google.com/p/log4go \
-github.com/bmizerany/pat \
-github.com/fitstar/falcore \
-github.com/fitstar/falcore/filter \
-github.com/gorilla/mux \
-github.com/influxdb/influxdb/_vendor/raft \
-github.com/influxdb/go-cache \
-github.com/BurntSushi/toml \
-code.google.com/p/gogoprotobuf/proto \
-github.com/influxdb/gomdb \
-code.google.com/p/go.tools/cmd/vet \
-github.com/jmhodges/levigo \
-github.com/influxdb/rocksdb \
-github.com/influxdb/hyperleveldb-go
-
-dependencies_paths := $(addprefix $(root)/src/,$(dependencies))
-
-$(dependencies_paths):
-	for i in $(dependencies); do $(GO) get -d $$i; done
-
 storage_engines += $(leveldb_deps)
 
-dependencies: $(storage_engines) $(dependencies_paths)
-
-test_dependencies: dependencies
-	$(GO) get launchpad.net/gocheck
+dependencies: $(storage_engines)
+	$(GO) get $(GO_BUILD_OPTIONS) -d -t github.com/influxdb/influxdb/...
 
 $(root)/bin/protoc-gen-go:
-	$(GO) get $(proto_dependency)
+	$(GO) get code.google.com/p/goprotobuf/protoc-gen-go
 
 protobuf: $(root)/bin/protoc-gen-go
 	rm -f protocol/*.pb.go
@@ -266,6 +240,11 @@ clean:
 	rm -rf $(rocksdb_dir)
 	$(MAKE) -C parser clean
 
+rebuild_static_assets:
+	$(GO) get github.com/rakyll/statik
+	$(GOPATH)/bin/statik -src=./shared/admin
+	$(MAKE) format
+
 only =
 verbose = off
 ifneq ($(only),)
@@ -283,15 +262,15 @@ endif
 timeout = 20m
 GOTEST_OPTS += -test.timeout=$(timeout)
 
-test: test_dependencies parser protobuf
+test: dependencies parser protobuf
 	$(GO) test $(test_packages) $(GOTEST_OPTS)
 
-coverage: test_dependencies
+coverage: dependencies
 	for i in $(build_packages); do $(GO) test -coverprofile ${TMPDIR}/influxdb.$${i/\//}.coverage $$i $(GOTEST_OPTS); \
    $(GO) tool cover -html=${TMPDIR}/influxdb.$${i/\//}.coverage; done
 
 
-integration_test: test_dependencies build
+integration_test: dependencies build
 	$(GO) test github.com/influxdb/influxdb/integration $(GOTEST_OPTS)
 
 package_version=$(subst -,_,$(version))
@@ -344,12 +323,20 @@ $(debian_package): $(admin_dir)/build build
 	mv out_rpm/$(shell basename $(debian_package)) packages/
 
 $(source_package): dependencies
+	rm -f influxdb
+	git ls-files --others | egrep -v 'admin-ui|version.go' > ${TMPDIR}/influxdb.ignored
+	echo "pkg/*" >> ${TMPDIR}/influxdb.ignored
+	echo "bin/*" >> ${TMPDIR}/influxdb.ignored
+	echo "packages/*" >> ${TMPDIR}/influxdb.ignored
+	echo "build/*" >> ${TMPDIR}/influxdb.ignored
+	echo "out_rpm/*" >> ${TMPDIR}/influxdb.ignored
 	rm -rf ${TMPDIR}/influxdb.gopath
-	GOPATH=${TMPDIR}/influxdb.gopath $(GO) get -d github.com/influxdb/influxdb/daemon
-	cp protocol/*.pb.go ${TMPDIR}/influxdb.gopath/src/github.com/influxdb/influxdb/protocol
-	cp daemon/version.go ${TMPDIR}/influxdb.gopath/src/github.com/influxdb/influxdb/daemon
-	cp -R $(admin_dir)/build ${TMPDIR}/influxdb.gopath/src/github.com/influxdb/influxdb/admin-ui
-	tar --exclude-vcs -cvzf $(source_package) -C ${TMPDIR}/influxdb.gopath .
+	mkdir -p ${TMPDIR}/influxdb.gopath/src/github.com/influxdb/
+	cp -R $(shell pwd) ${TMPDIR}/influxdb.gopath/src/github.com/influxdb/
+	GOPATH=${TMPDIR}/influxdb.gopath $(MAKE) -C ${TMPDIR}/influxdb.gopath/src/github.com/influxdb/influxdb build
+	cp -R $(admin_dir)/build admin-ui
+	tar -hcvzf $(source_package) -C ${TMPDIR}/influxdb.gopath -X ${TMPDIR}/influxdb.ignored .
+	rm -rf admin-ui
 
 $(binary_package): $(admin_dir)/build build packages
 	rm -rf build
