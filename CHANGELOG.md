@@ -1,4 +1,49 @@
-## v0.8.4 [2014-10-21]
+## v0.8.5 [2014-10-27]
+
+### Features
+
+- [Issue #1055](https://github.com/influxdb/influxdb/issues/1055). Allow
+  graphite and collectd input plugins to have separate binding address
+
+### Bugfixes
+
+- [Issue #1058](https://github.com/influxdb/influxdb/issues/1058). Use
+  the query language instead of the continuous query endpoints that
+  were removed in 0.8.4
+- [Issue #1022](https://github.com/influxdb/influxdb/issues/1022). Return
+  an +Inf or NaN instead of panicing when we encounter a divide by zero
+- [Issue #821](https://github.com/influxdb/influxdb/issues/821). Don't
+  scan through points when we hit the limit
+- [Issue #1051](https://github.com/influxdb/influxdb/issues/1051). Fix
+  timestamps when the collectd is used and low resolution timestamps
+  is set.
+
+## v0.8.4 [2014-10-24]
+
+### Bugfixes
+
+- Remove the continuous query api endpoints since the query language
+  has all the features needed to list and delete continuous queries.
+- [Issue #778](https://github.com/influxdb/influxdb/issues/778). Selecting
+  from a non-existent series should give a better error message indicating
+  that the series doesn't exist
+- [Issue #988](https://github.com/influxdb/influxdb/issues/988). Check
+  the arguments of `top()` and `bottom()`
+- [Issue #1021](https://github.com/influxdb/influxdb/issues/1021). Make
+  redirecting to standard output and standard error optional instead of
+  going to `/dev/null`. This can now be configured by setting `$STDOUT`
+  in `/etc/default/influxdb`
+- [Issue #985](https://github.com/influxdb/influxdb/issues/985). Make
+  sure we drop a shard only when there's no one using it. Otherwise, the
+  shard can be closed when another goroutine is writing to it which will
+  cause random errors and possibly corruption of the database.
+
+### Features
+
+- [Issue #1047](https://github.com/influxdb/influxdb/issues/1047). Allow
+  merge() to take a list of series (as opposed to a regex in #72)
+
+## v0.8.4-rc.1 [2014-10-21]
 
 ### Bugfixes
 
