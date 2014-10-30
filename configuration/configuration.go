@@ -69,6 +69,11 @@ type ApiConfig struct {
 	ReadTimeout duration `toml:"read-timeout"`
 }
 
+type NxgConfig struct {
+	Enabled bool
+	Port    string
+}
+
 type GraphiteConfig struct {
 	Enabled    bool
 	Address    string
@@ -149,6 +154,7 @@ type InputPlugins struct {
 	CollectdInput   CollectdInputConfig `toml:"collectd"`
 	UdpInput        UdpInputConfig      `toml:"udp"`
 	UdpServersInput []UdpInputConfig    `toml:"udp_servers"`
+	Nxg             NxgConfig           `toml:"nxg"`
 }
 
 type TomlConfiguration struct {
@@ -184,6 +190,9 @@ type Configuration struct {
 	CollectdPort     int
 	CollectdDatabase string
 	CollectdTypesDB  string
+
+	NxgEnabled bool
+	NxgPort    string
 
 	UdpServers []UdpInputConfig
 
@@ -330,6 +339,9 @@ func parseTomlConfiguration(filename string) (*Configuration, error) {
 		CollectdPort:     tomlConfiguration.InputPlugins.CollectdInput.Port,
 		CollectdDatabase: tomlConfiguration.InputPlugins.CollectdInput.Database,
 		CollectdTypesDB:  tomlConfiguration.InputPlugins.CollectdInput.TypesDB,
+
+		NxgEnabled: tomlConfiguration.InputPlugins.Nxg.Enabled,
+		NxgPort:    tomlConfiguration.InputPlugins.Nxg.Port,
 
 		UdpServers: tomlConfiguration.InputPlugins.UdpServersInput,
 

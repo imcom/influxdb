@@ -11,6 +11,7 @@ import (
 	"github.com/influxdb/influxdb/api/collectd"
 	"github.com/influxdb/influxdb/api/graphite"
 	"github.com/influxdb/influxdb/api/http"
+	"github.com/influxdb/influxdb/api/nxgpb"
 	"github.com/influxdb/influxdb/api/udp"
 	influxdb "github.com/influxdb/influxdb/client"
 	"github.com/influxdb/influxdb/cluster"
@@ -31,6 +32,7 @@ type Server struct {
 	UdpApi         *udp.Server
 	UdpServers     []*udp.Server
 	AdminServer    *admin.HttpServer
+	NxgApi         *nxgpb.NxgServer
 	Coordinator    *coordinator.Coordinator
 	Config         *configuration.Configuration
 	RequestHandler *coordinator.ProtobufRequestHandler
@@ -72,6 +74,9 @@ func NewServer(config *configuration.Configuration) (*Server, error) {
 	collectdApi := collectd.NewServer(config, coord, clusterConfig)
 	adminServer := admin.NewHttpServer(config.AdminHttpPortString())
 
+	// nxgRequestHandler := coordinator.NewProtobufRequestHandler(coord, clusterConfig)
+	nxgApi := nxgpb.NewNxgServer(config.NxgPort, clusterConfig, coord)
+
 	return &Server{
 		RaftServer:     raftServer,
 		ProtobufServer: protobufServer,
@@ -81,6 +86,7 @@ func NewServer(config *configuration.Configuration) (*Server, error) {
 		CollectdApi:    collectdApi,
 		Coordinator:    coord,
 		AdminServer:    adminServer,
+		NxgApi:         nxgApi,
 		Config:         config,
 		RequestHandler: requestHandler,
 		writeLog:       writeLog,
@@ -176,6 +182,12 @@ func (self *Server) ListenAndServe() error {
 		}
 	} else {
 		log.Info("Collectd input plugins is disabled")
+	}
+
+	if self.Config.NxgEnabled {
+		go self.NxgApi.ListenAndServe()
+	} else {
+		log.Info("NxgServer plugin is diabled")
 	}
 
 	// UDP input

@@ -46,6 +46,7 @@ message Request {
   optional string user_name = 8;
   optional uint32 request_number = 9;
   optional bool is_db_user = 10;
+  optional string password = 11;
 }
 
 message Response {
