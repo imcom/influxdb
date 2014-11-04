@@ -56,7 +56,6 @@ var registeredCommands bool
 
 // Creates a new server.
 func NewRaftServer(config *configuration.Configuration, clusterConfig *cluster.ClusterConfiguration) *RaftServer {
-	// raft.SetLogLevel(raft.Debug)
 	if !registeredCommands {
 		registeredCommands = true
 		for _, command := range internalRaftCommands {
@@ -331,6 +330,8 @@ const (
 )
 
 func (s *RaftServer) ForceLogCompaction() error {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
 	err := s.raftServer.TakeSnapshot()
 	if err != nil {
 		log.Error("Cannot take snapshot: %s", err)
@@ -385,7 +386,7 @@ func (s *RaftServer) startRaft() error {
 	// Initialize and start Raft server.
 	transporter := raft.NewHTTPTransporter("/raft", raft.DefaultElectionTimeout)
 	var err error
-	s.raftServer, err = raft.NewServer(s.name, s.path, transporter, s.clusterConfig, s.clusterConfig, "")
+	s.raftServer, err = raft.NewServer(s.name, s.path, transporter, s.clusterConfig, s.clusterConfig, s.config.RaftConnectionString())
 	if err != nil {
 		return err
 	}

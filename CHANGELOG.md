@@ -1,3 +1,26 @@
+## v0.8.6 [unreleased]
+
+### Features
+
+- [Issue #1068](https://github.com/influxdb/influxdb/issues/1068). Print
+  the processor chain when the query is started
+- [Issue #973](https://github.com/influxdb/influxdb/issues/973). Support joining
+  using a regex or list of time series
+
+### Bugfixes
+
+- [Issue #943](https://github.com/influxdb/influxdb/issues/943). Don't
+  take two snapshots at the same time
+- [Issue #1085](https://github.com/influxdb/influxdb/issues/1085). Set
+  the connection string of the local raft node
+- [Issue #996](https://github.com/influxdb/influxdb/issues/996). Fill should
+  fill the time range even if no points exists in the given time range
+- [Issue #1076](https://github.com/influxdb/influxdb/issues/1076). Fix
+  the timestamps of data points written by the collectd plugin. (Thanks,
+  @renchap for reporting this bug)
+- [Issue #1078](https://github.com/influxdb/influxdb/issues/1078). Make sure
+  we don't resurrect shard directories for shards that have already expired
+
 ## v0.8.5 [2014-10-27]
 
 ### Features

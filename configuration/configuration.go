@@ -99,6 +99,7 @@ type UdpInputConfig struct {
 type RaftConfig struct {
 	Port    int
 	Dir     string
+	Debug   bool
 	Timeout duration `toml:"election-timeout"`
 }
 
@@ -209,6 +210,7 @@ type Configuration struct {
 
 	RaftServerPort               int
 	RaftTimeout                  duration
+	RaftDebug                    bool
 	SeedServers                  []string
 	DataDir                      string
 	RaftDir                      string
@@ -361,6 +363,7 @@ func parseTomlConfiguration(filename string) (*Configuration, error) {
 		RaftServerPort:               tomlConfiguration.Raft.Port,
 		RaftTimeout:                  tomlConfiguration.Raft.Timeout,
 		RaftDir:                      tomlConfiguration.Raft.Dir,
+		RaftDebug:                    tomlConfiguration.Raft.Debug,
 		ProtobufPort:                 tomlConfiguration.Cluster.ProtobufPort,
 		ProtobufTimeout:              tomlConfiguration.Cluster.ProtobufTimeout,
 		ProtobufHeartbeatInterval:    tomlConfiguration.Cluster.ProtobufHeartbeatInterval,
