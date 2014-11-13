@@ -16,7 +16,7 @@ bind-address = "0.0.0.0"
 reporting-disabled = false
 
 [logging]
-# logging level can be one of "debug", "info", "warn" or "error"
+# logging level can be one of "fine", "debug", "info", "warn" or "error"
 level  = "info"
 file   = "influxdb.log"         # stdout to log to standard out, or syslog facility
 
@@ -78,6 +78,8 @@ port = 8090
 
 # Where the raft logs are stored. The user running InfluxDB will need read/write access.
 dir  = "/tmp/influxdb/development/raft"
+
+debug = false
 
 # election-timeout = "1s"
 

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	log "code.google.com/p/log4go"
+	"github.com/influxdb/influxdb/_vendor/raft"
 	"github.com/influxdb/influxdb/configuration"
 	"github.com/influxdb/influxdb/coordinator"
 	"github.com/influxdb/influxdb/server"
@@ -21,12 +22,18 @@ import (
 func setupLogging(loggingLevel, logFile string) {
 	level := log.DEBUG
 	switch loggingLevel {
+	case "fine":
+		level = log.FINE
+	case "debug":
+		level = log.DEBUG
 	case "info":
 		level = log.INFO
 	case "warn":
 		level = log.WARNING
 	case "error":
 		level = log.ERROR
+	default:
+		log.Error("Unknown log level %s. Defaulting to DEBUG", loggingLevel)
 	}
 
 	log.Global = make(map[string]*log.Filter)
@@ -60,6 +67,14 @@ func setupLogging(loggingLevel, logFile string) {
 }
 
 func main() {
+	if start() != nil {
+		os.Exit(1)
+	}
+
+	os.Exit(0)
+}
+
+func start() error {
 	fileName := flag.String("config", "config.sample.toml", "Config file")
 	wantsVersion := flag.Bool("v", false, "Get version number")
 	resetRootPassword := flag.Bool("reset-root", false, "Reset root password")
@@ -77,12 +92,12 @@ func main() {
 	v := fmt.Sprintf("InfluxDB v%s (git: %s) (leveldb: %d.%d)", version, gitSha, levigo.GetLevelDBMajorVersion(), levigo.GetLevelDBMinorVersion())
 	if wantsVersion != nil && *wantsVersion {
 		fmt.Println(v)
-		return
+		return nil
 	}
 	config, err := configuration.LoadConfiguration(*fileName)
 
 	if err != nil {
-		return
+		return err
 	}
 
 	// override the hostname if it was specified on the command line
@@ -110,6 +125,11 @@ func main() {
 	}
 
 	setupLogging(config.LogLevel, config.LogFile)
+
+	if config.RaftDebug {
+		log.Info("Turning on raft debug logging")
+		raft.SetLogLevel(raft.Trace)
+	}
 
 	if *repairLeveldb {
 		log.Info("Repairing leveldb")
@@ -180,4 +200,5 @@ func main() {
 	if err != nil {
 		log.Error("ListenAndServe failed: ", err)
 	}
+	return err
 }

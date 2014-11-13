@@ -96,6 +96,7 @@ func (pi *PointIterator) Next() {
 		// if the value is nil or doesn't match the point's timestamp and sequence number
 		// then skip it
 		if rcv.value == nil || rcv.time != next.time || rcv.sequence != next.sequence {
+			log4go.Debug("rcv = %#v, next = %#v", rcv, next)
 			pi.point.Values[i] = &protocol.FieldValue{IsNull: &TRUE}
 			continue
 		}
@@ -163,6 +164,7 @@ func (pi *PointIterator) Close() {
 func (pi *PointIterator) getIteratorNextValue() error {
 	for i, it := range pi.itrs {
 		if pi.rawColumnValues[i].value != nil {
+			log4go.Debug("Value in iterator isn't nil, skipping")
 			continue
 		}
 
@@ -170,6 +172,7 @@ func (pi *PointIterator) getIteratorNextValue() error {
 			if err := it.Error(); err != nil {
 				return err
 			}
+			log4go.Debug("Iterator isn't valid, skipping")
 			continue
 		}
 

@@ -1,6 +1,9 @@
 package engine
 
-import "github.com/influxdb/influxdb/protocol"
+import (
+	"code.google.com/p/log4go"
+	"github.com/influxdb/influxdb/protocol"
+)
 
 type CommonMergeEngine struct {
 	merger  *Merger
@@ -39,6 +42,7 @@ func (cme *CommonMergeEngine) Close() error {
 }
 
 func (cme *CommonMergeEngine) Yield(s *protocol.Series) (bool, error) {
+	log4go.Fine("CommonMergeEngine.Yield(): %s", s)
 	stream := cme.streams[s.GetShardId()]
 	stream.Yield(s)
 	return cme.merger.Update()
@@ -46,4 +50,8 @@ func (cme *CommonMergeEngine) Yield(s *protocol.Series) (bool, error) {
 
 func (cme *CommonMergeEngine) Name() string {
 	return "CommonMergeEngine"
+}
+
+func (self *CommonMergeEngine) Next() Processor {
+	return self.next
 }

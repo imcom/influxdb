@@ -190,6 +190,13 @@ func (self *SelectQuery) GetQueryString() string {
 }
 
 func (self *SelectQuery) GetQueryStringWithTimeCondition() string {
+	// if this is a single point query then it already has a time (and
+	// sequence number) condition; we don't need the extra (time < ???
+	// and time > ???) condition in the query string.
+	if self.IsSinglePointQuery() {
+		return self.GetQueryString()
+	}
+
 	return self.commonGetQueryStringWithTimes(true, true, self.startTime, self.endTime)
 }
 
@@ -473,7 +480,7 @@ func GetFromClause(fromClause *C.from_clause) (*FromClause, error) {
 	var regex *regexp.Regexp
 
 	switch t {
-	case FromClauseMergeRegex:
+	case FromClauseMergeRegex, FromClauseJoinRegex:
 		val, err := GetValue(fromClause.regex_value)
 		if err != nil {
 			return nil, err

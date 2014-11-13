@@ -285,7 +285,6 @@ func (self *ClusterConfiguration) RemoveServer(server *ClusterServer) error {
 func (self *ClusterConfiguration) AddPotentialServer(server *ClusterServer) {
 	self.serversLock.Lock()
 	defer self.serversLock.Unlock()
-	server.State = Potential
 	self.servers = append(self.servers, server)
 	self.lastServerIdUsed++
 	server.Id = self.lastServerIdUsed
@@ -796,6 +795,10 @@ func (self *ClusterConfiguration) createDefaultShardSpace(database string) (*Sha
 	return space, nil
 }
 
+// Given a db and series name and pick a shard where a point with the
+// given timestamp should be written to. If the point is outside the
+// retention period of the shard space then return nil. The returned
+// shard is always nil if err != nil
 func (self *ClusterConfiguration) GetShardToWriteToBySeriesAndTime(db, series string, microsecondsEpoch int64) (*ShardData, error) {
 	shardSpace := self.getShardSpaceToMatchSeriesName(db, series)
 	if shardSpace == nil {
@@ -805,6 +808,17 @@ func (self *ClusterConfiguration) GetShardToWriteToBySeriesAndTime(db, series st
 			return nil, err
 		}
 	}
+
+	// if the shard will be dropped anyway because of the shard space
+	// retention period, then return nothing. Don't try to write
+	retention := shardSpace.ParsedRetentionPeriod()
+	if retention != InfiniteRetention {
+		_, endTime := self.getStartAndEndBasedOnDuration(microsecondsEpoch, shardSpace.SecondsOfDuration())
+		if endTime.Before(time.Now().Add(-retention)) {
+			return nil, nil
+		}
+	}
+
 	matchingShards := make([]*ShardData, 0)
 	for _, s := range shardSpace.shards {
 		if s.IsMicrosecondInRange(microsecondsEpoch) {
@@ -1343,11 +1357,11 @@ func (self *ClusterConfiguration) RemoveShardSpace(database, name string) error 
 	} else {
 		self.databaseShardSpaces[database] = spacesToKeep
 	}
-	for _, s := range space.shards {
-		delete(self.shardsById, s.id)
-	}
-
 	if space != nil {
+		for _, s := range space.shards {
+			delete(self.shardsById, s.id)
+		}
+
 		go func() {
 			for _, s := range space.shards {
 				self.shardStore.DeleteShard(s.id)

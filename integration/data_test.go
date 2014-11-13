@@ -89,7 +89,7 @@ func (self *DataTestSuite) TestWritingToExpiredShards(c *C) {
 
 	data := CreatePoints("test_using_deleted_shard", 1, 1000000)
 	data[0].Columns = append(data[0].Columns, "time")
-	for i, _ := range data[0].Points {
+	for i := range data[0].Points {
 		data[0].Points[i] = append(data[0].Points[i], 0)
 	}
 	// This test will fail randomly without the fix submitted in the
@@ -547,6 +547,41 @@ func (self *DataTestSuite) TestWhereAndArithmetic(c *C) {
 	maps := ToMap(serieses[0])
 	c.Assert(maps, HasLen, 1)
 	c.Assert(maps[0]["expr0"], Equals, 2.0)
+}
+
+// issue #524
+func (self *DataTestSuite) TestJoinRegex(c *C) {
+	t1 := time.Now().Truncate(time.Hour).Add(-4 * time.Hour)
+	t2 := t1.Add(time.Hour)
+	data := fmt.Sprintf(`[
+{
+  "name":"foo1",
+  "columns":["time", "val"],
+  "points":[[%d, 1],[%d, 2]]
+},
+{
+  "name":"foo2",
+  "columns":["time", "val"],
+  "points":[[%d, 3],[%d, 4]]
+
+},
+{
+  "name":"foo3",
+  "columns":["time", "val"],
+  "points":[[%d, 5],[%d, 6]]
+
+}]`, t1.Unix(), t2.Unix(), t1.Unix(), t2.Unix(), t1.Unix(), t2.Unix())
+	self.client.WriteJsonData(data, c, "s")
+	serieses := self.client.RunQuery("select * from join(/foo\\d+/)", c, "m")
+	c.Assert(serieses, HasLen, 1)
+	maps := ToMap(serieses[0])
+	c.Assert(maps, HasLen, 2)
+	c.Assert(maps[0]["foo1.val"], Equals, 2.0)
+	c.Assert(maps[0]["foo2.val"], Equals, 4.0)
+	c.Assert(maps[0]["foo3.val"], Equals, 6.0)
+	c.Assert(maps[1]["foo1.val"], Equals, 1.0)
+	c.Assert(maps[1]["foo2.val"], Equals, 3.0)
+	c.Assert(maps[1]["foo3.val"], Equals, 5.0)
 }
 
 // issue #524
@@ -2753,4 +2788,21 @@ func (self *DataTestSuite) TestHistogramAggregateFillWith0(c *C) {
 	// FIXME: Can't test return values because the order of the returned data is randomized.
 	//        Add some asserts here once engine/aggregator_operators.go
 	//        func(self *HistogramAggregator) GetValues(...) is modified to sort data.
+}
+
+// Test issue #996: fill() does not fill empty series / timespan
+func (self *DataTestSuite) TestIssue996FillEmptyTimespan(c *C) {
+	data := `
+[
+  {
+	"name": "data",
+    "columns": ["time", "value"],
+    "points": [
+    [10000, 10.0]
+    ]
+  }
+]`
+
+	expect := []tv{{300000.0, nil}, {240000.0, nil}, {180000.0, nil}, {120000.0, nil}, {60000.0, nil}}
+	self.tstAggregateFill(data, "sum", "null", emptyAggArgs, expect, c)
 }
