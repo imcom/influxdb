@@ -22,14 +22,16 @@ a.out
 .DS_Store
 
 # ignore generated files.
-daemon/version.go
+cmd/influxd/version.go
 parser/lex.yy.c
 parser/y.tab.h
 parser/y.tab.c
+parser/test_memory_leaks
 protocol/protocol.pb.go
 build/
 
 # executables
+/influxd
 /influxdb
 /benchmark-tool
 /main
