@@ -6,6 +6,9 @@ var (
 	// ErrPathRequired is returned when opening a broker without a path.
 	ErrPathRequired = errors.New("path required")
 
+	// ErrPathRequired is returned when opening a broker without a connection address.
+	ErrConnectionAddressRequired = errors.New("connection address required")
+
 	// ErrClosed is returned when closing a broker that's already closed.
 	ErrClosed = errors.New("broker already closed")
 
@@ -21,8 +24,8 @@ var (
 	// ErrReplicaNotFound is returned when referencing a replica that doesn't exist.
 	ErrReplicaNotFound = errors.New("replica not found")
 
-	// ErrReplicaNameRequired is returned when finding a replica without a name.
-	ErrReplicaNameRequired = errors.New("replica name required")
+	// ErrReplicaRequired is returned when finding a replica without an id.
+	ErrReplicaRequired = errors.New("replica required")
 
 	// errReplicaUnavailable is returned when writing bytes to a replica when
 	// there is no writer attached to the replica.

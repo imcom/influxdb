@@ -50,12 +50,6 @@ func (s *Scanner) Scan() (tok Token, pos Pos, lit string) {
 		return DIV, pos, ""
 	case '=':
 		return EQ, pos, ""
-	case '!':
-		if ch1, _ := s.r.read(); ch1 == '=' {
-			return NEQ, pos, ""
-		}
-		s.r.unread()
-		return ILLEGAL, pos, string(ch0)
 	case '>':
 		if ch1, _ := s.r.read(); ch1 == '=' {
 			return GTE, pos, ""
@@ -65,6 +59,8 @@ func (s *Scanner) Scan() (tok Token, pos Pos, lit string) {
 	case '<':
 		if ch1, _ := s.r.read(); ch1 == '=' {
 			return LTE, pos, ""
+		} else if ch1 == '>' {
+			return NEQ, pos, ""
 		}
 		s.r.unread()
 		return LT, pos, ""
@@ -118,7 +114,7 @@ func (s *Scanner) scanIdent() (tok Token, pos Pos, lit string) {
 		ch, _ = s.r.read()
 		if ch == eof {
 			break
-		} else if !isLetter(ch) && !isDigit(ch) && ch != '_' {
+		} else if !isLetter(ch) && !isDigit(ch) && ch != '_' && ch != '.' {
 			s.r.unread()
 			break
 		} else {
@@ -154,6 +150,8 @@ func (s *Scanner) scanString() (tok Token, pos Pos, lit string) {
 				_, _ = buf.WriteRune('\n')
 			} else if ch1 == '\\' {
 				_, _ = buf.WriteRune('\\')
+			} else if ch1 == '"' {
+				_, _ = buf.WriteRune('"')
 			} else {
 				return BADESCAPE, pos0, string(ch0) + string(ch1)
 			}

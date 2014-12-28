@@ -3,7 +3,7 @@ InfluxDB [![Build Status](https://travis-ci.org/influxdb/influxdb.png?branch=mas
 
 > NOTE: The master branch of InfluxDB is undergoing a significant refactor for
 > v0.9.0. If you need to build a working copy of InfluxDB, please use the
-> [`0.8.6`](https://github.com/influxdb/influxdb/releases/tag/v0.8.6) tag.
+> [`0.8.7`](https://github.com/influxdb/influxdb/releases/tag/v0.8.7) tag.
 
 InfluxDB is an open source **distributed time series database** with
 **no external dependencies**. It's useful for recording metrics,
@@ -21,17 +21,17 @@ should return in < 100ms.
 
 ## Quickstart
 
-* Understand the [design goals and motivations of the project](http://influxdb.org/docs/v0.7/introduction/overview.html).
-* Follow the [getting started guide](http://influxdb.org/docs/v0.7/introduction/getting_started.html) to find out how to install InfluxDB, start writing data, and issue queries - in just a few minutes.
+* Understand the [design goals and motivations of the project](http://influxdb.com/docs/v0.8/introduction/overview.html).
+* Follow the [getting started guide](http://influxdb.com/docs/v0.8/introduction/getting_started.html) to find out how to install InfluxDB, start writing data, and issue queries - in just a few minutes.
 * See the
-  [list of libraries for different languages](http://influxdb.com/docs/v0.7/client_libraries/javascript.html),
+  [list of libraries for different languages](http://influxdb.com/docs/v0.8/client_libraries/javascript.html),
   or check out the
-  [HTTP API documentation to start writing a library for your favorite language](http://influxdb.org/docs/v0.7/api/reading_and_writing_data.html).
+  [HTTP API documentation to start writing a library for your favorite language](http://influxdb.com/docs/v0.8/api/reading_and_writing_data.html).
 
 ## Building
 
 You don't need to build the project to use it. Pre-built
-[binaries and instructions to install InfluxDB are here](http://influxdb.org/docs/v0.7/introduction/installation.html). That's
+[binaries and instructions to install InfluxDB are here](http://influxdb.com/docs/v0.8/introduction/installation.html). That's
 the recommended way to get it running. However, if you want to
 contribute to the core of InfluxDB, you'll need to build. For those
 adventurous enough, you can

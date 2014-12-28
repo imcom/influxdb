@@ -4,9 +4,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
+)
+
+const (
+	// DateFormat represents the format for date literals.
+	DateFormat = "2006-01-02"
+
+	// DateTimeFormat represents the format for date time literals.
+	DateTimeFormat = "2006-01-02 15:04:05.999999"
 )
 
 // Parser represents an InfluxQL parser.
@@ -63,6 +72,24 @@ func (p *Parser) ParseStatement() (Statement, error) {
 			return p.parseListSeriesStatement()
 		} else if tok == CONTINUOUS {
 			return p.parseListContinuousQueriesStatement()
+		} else if tok == MEASUREMENTS {
+			return p.parseListMeasurementsStatement()
+		} else if tok == TAG {
+			if tok, pos, lit := p.scanIgnoreWhitespace(); tok == KEYS {
+				return p.parseListTagKeysStatement()
+			} else if tok == VALUES {
+				return p.parseListTagValuesStatement()
+			} else {
+				return nil, newParseError(tokstr(tok, lit), []string{"KEYS", "VALUES"}, pos)
+			}
+		} else if tok == FIELD {
+			if tok, pos, lit := p.scanIgnoreWhitespace(); tok == KEYS {
+				return p.parseListFieldKeysStatement()
+			} else if tok == VALUES {
+				return p.parseListFieldValuesStatement()
+			} else {
+				return nil, newParseError(tokstr(tok, lit), []string{"KEYS", "VALUES"}, pos)
+			}
 		} else {
 			return nil, newParseError(tokstr(tok, lit), []string{"SERIES", "CONTINUOUS"}, pos)
 		}
@@ -97,7 +124,10 @@ func (p *Parser) parseSelectStatement() (*SelectStatement, error) {
 	}
 	stmt.Fields = fields
 
-	// Parse source: "FROM IDENT".
+	// Parse source.
+	if tok, pos, lit := p.scanIgnoreWhitespace(); tok != FROM {
+		return nil, newParseError(tokstr(tok, lit), []string{"FROM"}, pos)
+	}
 	source, err := p.parseSource()
 	if err != nil {
 		return nil, err
@@ -118,19 +148,19 @@ func (p *Parser) parseSelectStatement() (*SelectStatement, error) {
 	}
 	stmt.Dimensions = dimensions
 
+	// Parse sort: "ORDER BY FIELD+".
+	sortFields, err := p.parseOrderBy()
+	if err != nil {
+		return nil, err
+	}
+	stmt.SortFields = sortFields
+
 	// Parse limit: "LIMIT INT".
 	limit, err := p.parseLimit()
 	if err != nil {
 		return nil, err
 	}
 	stmt.Limit = limit
-
-	// Parse ordering: "ORDER BY (ASC|DESC)".
-	ascending, err := p.parseOrderBy()
-	if err != nil {
-		return nil, err
-	}
-	stmt.Ascending = ascending
 
 	return stmt, nil
 }
@@ -140,7 +170,10 @@ func (p *Parser) parseSelectStatement() (*SelectStatement, error) {
 func (p *Parser) parseDeleteStatement() (*DeleteStatement, error) {
 	stmt := &DeleteStatement{}
 
-	// Parse source: "FROM IDENT".
+	// Parse source
+	if tok, pos, lit := p.scanIgnoreWhitespace(); tok != FROM {
+		return nil, newParseError(tokstr(tok, lit), []string{"FROM"}, pos)
+	}
 	source, err := p.parseSource()
 	if err != nil {
 		return nil, err
@@ -161,6 +194,213 @@ func (p *Parser) parseDeleteStatement() (*DeleteStatement, error) {
 // This function assumes the "LIST SERIES" tokens have already been consumed.
 func (p *Parser) parseListSeriesStatement() (*ListSeriesStatement, error) {
 	stmt := &ListSeriesStatement{}
+
+	// Parse condition: "WHERE EXPR".
+	condition, err := p.parseCondition()
+	if err != nil {
+		return nil, err
+	}
+	stmt.Condition = condition
+
+	// Parse sort: "ORDER BY FIELD+".
+	sortFields, err := p.parseOrderBy()
+	if err != nil {
+		return nil, err
+	}
+	stmt.SortFields = sortFields
+
+	// Parse limit: "LIMIT INT".
+	limit, err := p.parseLimit()
+	if err != nil {
+		return nil, err
+	}
+	stmt.Limit = limit
+
+	return stmt, nil
+}
+
+// parseListMeasurementsStatement parses a string and returns a ListSeriesStatement.
+// This function assumes the "LIST MEASUREMENTS" tokens have already been consumed.
+func (p *Parser) parseListMeasurementsStatement() (*ListMeasurementsStatement, error) {
+	stmt := &ListMeasurementsStatement{}
+
+	// Parse condition: "WHERE EXPR".
+	condition, err := p.parseCondition()
+	if err != nil {
+		return nil, err
+	}
+	stmt.Condition = condition
+
+	// Parse sort: "ORDER BY FIELD+".
+	sortFields, err := p.parseOrderBy()
+	if err != nil {
+		return nil, err
+	}
+	stmt.SortFields = sortFields
+
+	// Parse limit: "LIMIT INT".
+	limit, err := p.parseLimit()
+	if err != nil {
+		return nil, err
+	}
+	stmt.Limit = limit
+
+	return stmt, nil
+}
+
+// parseListTagKeysStatement parses a string and returns a ListSeriesStatement.
+// This function assumes the "LIST TAG KEYS" tokens have already been consumed.
+func (p *Parser) parseListTagKeysStatement() (*ListTagKeysStatement, error) {
+	stmt := &ListTagKeysStatement{}
+
+	// Parse source.
+	if tok, pos, lit := p.scanIgnoreWhitespace(); tok != FROM {
+		return nil, newParseError(tokstr(tok, lit), []string{"FROM"}, pos)
+	}
+	source, err := p.parseSource()
+	if err != nil {
+		return nil, err
+	}
+	stmt.Source = source
+
+	// Parse condition: "WHERE EXPR".
+	condition, err := p.parseCondition()
+	if err != nil {
+		return nil, err
+	}
+	stmt.Condition = condition
+
+	// Parse sort: "ORDER BY FIELD+".
+	sortFields, err := p.parseOrderBy()
+	if err != nil {
+		return nil, err
+	}
+	stmt.SortFields = sortFields
+
+	// Parse limit: "LIMIT INT".
+	limit, err := p.parseLimit()
+	if err != nil {
+		return nil, err
+	}
+	stmt.Limit = limit
+
+	return stmt, nil
+}
+
+// parseListTagValuesStatement parses a string and returns a ListSeriesStatement.
+// This function assumes the "LIST TAG VALUES" tokens have already been consumed.
+func (p *Parser) parseListTagValuesStatement() (*ListTagValuesStatement, error) {
+	stmt := &ListTagValuesStatement{}
+
+	// Parse source.
+	if tok, pos, lit := p.scanIgnoreWhitespace(); tok != FROM {
+		return nil, newParseError(tokstr(tok, lit), []string{"FROM"}, pos)
+	}
+	source, err := p.parseSource()
+	if err != nil {
+		return nil, err
+	}
+	stmt.Source = source
+
+	// Parse condition: "WHERE EXPR".
+	condition, err := p.parseCondition()
+	if err != nil {
+		return nil, err
+	}
+	stmt.Condition = condition
+
+	// Parse sort: "ORDER BY FIELD+".
+	sortFields, err := p.parseOrderBy()
+	if err != nil {
+		return nil, err
+	}
+	stmt.SortFields = sortFields
+
+	// Parse limit: "LIMIT INT".
+	limit, err := p.parseLimit()
+	if err != nil {
+		return nil, err
+	}
+	stmt.Limit = limit
+
+	return stmt, nil
+}
+
+// parseListFieldKeysStatement parses a string and returns a ListSeriesStatement.
+// This function assumes the "LIST FIELD KEYS" tokens have already been consumed.
+func (p *Parser) parseListFieldKeysStatement() (*ListFieldKeysStatement, error) {
+	stmt := &ListFieldKeysStatement{}
+
+	// Parse source.
+	if tok, pos, lit := p.scanIgnoreWhitespace(); tok != FROM {
+		return nil, newParseError(tokstr(tok, lit), []string{"FROM"}, pos)
+	}
+	source, err := p.parseSource()
+	if err != nil {
+		return nil, err
+	}
+	stmt.Source = source
+
+	// Parse condition: "WHERE EXPR".
+	condition, err := p.parseCondition()
+	if err != nil {
+		return nil, err
+	}
+	stmt.Condition = condition
+
+	// Parse sort: "ORDER BY FIELD+".
+	sortFields, err := p.parseOrderBy()
+	if err != nil {
+		return nil, err
+	}
+	stmt.SortFields = sortFields
+
+	// Parse limit: "LIMIT INT".
+	limit, err := p.parseLimit()
+	if err != nil {
+		return nil, err
+	}
+	stmt.Limit = limit
+
+	return stmt, nil
+}
+
+// parseListFieldValuesStatement parses a string and returns a ListSeriesStatement.
+// This function assumes the "LIST FIELD VALUES" tokens have already been consumed.
+func (p *Parser) parseListFieldValuesStatement() (*ListFieldValuesStatement, error) {
+	stmt := &ListFieldValuesStatement{}
+
+	// Parse source.
+	if tok, pos, lit := p.scanIgnoreWhitespace(); tok != FROM {
+		return nil, newParseError(tokstr(tok, lit), []string{"FROM"}, pos)
+	}
+	source, err := p.parseSource()
+	if err != nil {
+		return nil, err
+	}
+	stmt.Source = source
+
+	// Parse condition: "WHERE EXPR".
+	condition, err := p.parseCondition()
+	if err != nil {
+		return nil, err
+	}
+	stmt.Condition = condition
+
+	// Parse sort: "ORDER BY FIELD+".
+	sortFields, err := p.parseOrderBy()
+	if err != nil {
+		return nil, err
+	}
+	stmt.SortFields = sortFields
+
+	// Parse limit: "LIMIT INT".
+	limit, err := p.parseLimit()
+	if err != nil {
+		return nil, err
+	}
+	stmt.Limit = limit
+
 	return stmt, nil
 }
 
@@ -331,18 +571,52 @@ func (p *Parser) parseAlias() (string, error) {
 
 // parseSource parses the "FROM" clause of the query.
 func (p *Parser) parseSource() (Source, error) {
-	// Ensure the FROM token exists.
-	if tok, pos, lit := p.scanIgnoreWhitespace(); tok != FROM {
-		return nil, newParseError(tokstr(tok, lit), []string{"FROM"}, pos)
-	}
-
-	// Scan the identifier for the source.
+	// The first token can either be the series name or a join/merge call.
 	tok, pos, lit := p.scanIgnoreWhitespace()
 	if tok != IDENT && tok != STRING {
 		return nil, newParseError(tokstr(tok, lit), []string{"identifier", "string"}, pos)
 	}
 
-	return &Series{Name: lit}, nil
+	// If the token is a string or the next token is not an LPAREN then return a measurement.
+	if next, _, _ := p.scan(); tok == STRING || (tok == IDENT && next != LPAREN) {
+		p.unscan()
+		return &Measurement{Name: lit}, nil
+	}
+
+	// Verify the source type is join/merge.
+	sourceType := strings.ToLower(lit)
+	if sourceType != "join" && sourceType != "merge" {
+		return nil, &ParseError{Message: "unknown merge type: " + sourceType, Pos: pos}
+	}
+
+	// Parse measurement list.
+	var measurements []*Measurement
+	for {
+		// Scan the measurement name.
+		tok, pos, lit := p.scanIgnoreWhitespace()
+		if tok != IDENT && tok != STRING {
+			return nil, newParseError(tokstr(tok, lit), []string{"measurement name"}, pos)
+		}
+		measurements = append(measurements, &Measurement{Name: lit})
+
+		// If there's not a comma next then stop parsing measurements.
+		if tok, _, _ := p.scan(); tok != COMMA {
+			p.unscan()
+			break
+		}
+	}
+
+	// Expect a closing right paren.
+	if tok, pos, lit := p.scanIgnoreWhitespace(); tok != RPAREN {
+		return nil, newParseError(tokstr(tok, lit), []string{")"}, pos)
+	}
+
+	// Return the appropriate source type.
+	if sourceType == "join" {
+		return &Join{Measurements: measurements}, nil
+	} else {
+		return &Merge{Measurements: measurements}, nil
+	}
 }
 
 // parseCondition parses the "WHERE" clause of the query, if it exists.
@@ -431,29 +705,87 @@ func (p *Parser) parseLimit() (int, error) {
 	// Parse number.
 	n, _ := strconv.ParseInt(lit, 10, 64)
 
+	if n < 1 {
+		return 0, &ParseError{Message: "LIMIT must be > 0", Pos: pos}
+	}
+
 	return int(n), nil
 }
 
-// parseOrderBy parses the "ORDER BY" clause of the query, if it exists.
-func (p *Parser) parseOrderBy() (bool, error) {
-	// Check if the ORDER token exists.
+// parseOrderBy parses the "ORDER BY" clause of a query, if it exists.
+func (p *Parser) parseOrderBy() (SortFields, error) {
+	// Return nil result and nil error if no ORDER token at this position.
 	if tok, _, _ := p.scanIgnoreWhitespace(); tok != ORDER {
 		p.unscan()
-		return false, nil
+		return nil, nil
 	}
 
-	// Ensure the next token is BY.
+	// Parse the required BY token.
 	if tok, pos, lit := p.scanIgnoreWhitespace(); tok != BY {
-		return false, newParseError(tokstr(tok, lit), []string{"BY"}, pos)
+		return nil, newParseError(tokstr(tok, lit), []string{"BY"}, pos)
 	}
 
-	// Ensure the next token is ASC OR DESC.
+	// Parse the ORDER BY fields.
+	fields, err := p.parseSortFields()
+	if err != nil {
+		return nil, err
+	}
+
+	return fields, nil
+}
+
+// parseSortFields parses all fields of and ORDER BY clause.
+func (p *Parser) parseSortFields() (SortFields, error) {
+	var fields SortFields
+
+	// At least one field is required.
+	field, err := p.parseSortField()
+	if err != nil {
+		return nil, err
+	}
+	fields = append(fields, field)
+
+	// Parse additional fields.
+	for {
+		tok, _, _ := p.scanIgnoreWhitespace()
+
+		if tok != COMMA {
+			p.unscan()
+			break
+		}
+
+		field, err := p.parseSortField()
+		if err != nil {
+			return nil, err
+		}
+
+		fields = append(fields, field)
+	}
+
+	return fields, nil
+}
+
+// parseSortField parses one field of an ORDER BY clause.
+func (p *Parser) parseSortField() (*SortField, error) {
+	field := &SortField{}
+
+	// Next token should be ASC, DESC, or IDENT | STRING.
 	tok, pos, lit := p.scanIgnoreWhitespace()
-	if tok != ASC && tok != DESC {
-		return false, newParseError(tokstr(tok, lit), []string{"ASC", "DESC"}, pos)
+	if tok == IDENT || tok == STRING {
+		field.Name = lit
+		// Check for optional ASC or DESC token.
+		tok, pos, lit = p.scanIgnoreWhitespace()
+		if tok != ASC && tok != DESC {
+			p.unscan()
+			return field, nil
+		}
+	} else if tok != ASC && tok != DESC {
+		return nil, newParseError(tokstr(tok, lit), []string{"identifier, ASC, or DESC"}, pos)
 	}
 
-	return tok == ASC, nil
+	field.Ascending = (tok == ASC)
+
+	return field, nil
 }
 
 // ParseExpr parses an expression.
@@ -524,6 +856,20 @@ func (p *Parser) parseUnaryExpr() (Expr, error) {
 			return &VarRef{Val: lit}, nil
 		}
 	case STRING:
+		// If literal looks like a date time then parse it as a time literal.
+		if isDateTimeString(lit) {
+			t, err := time.Parse(DateTimeFormat, lit)
+			if err != nil {
+				return nil, &ParseError{Message: "unable to parse datetime", Pos: pos}
+			}
+			return &TimeLiteral{Val: t}, nil
+		} else if isDateString(lit) {
+			t, err := time.Parse(DateFormat, lit)
+			if err != nil {
+				return nil, &ParseError{Message: "unable to parse date", Pos: pos}
+			}
+			return &TimeLiteral{Val: t}, nil
+		}
 		return &StringLiteral{Val: lit}, nil
 	case NUMBER:
 		v, err := strconv.ParseFloat(lit, 64)
@@ -656,6 +1002,41 @@ func ParseDuration(s string) (time.Duration, error) {
 	}
 }
 
+// FormatDuration formats a duration to a string.
+func FormatDuration(d time.Duration) string {
+	if d == 0 {
+		return "0s"
+	} else if d%(7*24*time.Hour) == 0 {
+		return fmt.Sprintf("%dw", d/(7*24*time.Hour))
+	} else if d%(24*time.Hour) == 0 {
+		return fmt.Sprintf("%dd", d/(24*time.Hour))
+	} else if d%time.Hour == 0 {
+		return fmt.Sprintf("%dh", d/time.Hour)
+	} else if d%time.Minute == 0 {
+		return fmt.Sprintf("%dm", d/time.Minute)
+	} else if d%time.Second == 0 {
+		return fmt.Sprintf("%ds", d/time.Second)
+	} else if d%time.Millisecond == 0 {
+		return fmt.Sprintf("%dms", d/time.Millisecond)
+	} else {
+		return fmt.Sprintf("%d", d/time.Microsecond)
+	}
+}
+
+// Quote returns a quoted string.
+func Quote(s string) string {
+	return `"` + strings.NewReplacer("\n", `\n`, `\`, `\\`, `"`, `\"`).Replace(s) + `"`
+}
+
+// QuoteIdent returns a quoted identifier if the identifier requires quoting.
+// Otherwise returns the original string passed in.
+func QuoteIdent(s string) string {
+	if s == "" || regexp.MustCompile(`[^a-zA-Z_.]`).MatchString(s) {
+		return Quote(s)
+	}
+	return s
+}
+
 // split splits a string into a slice of runes.
 func split(s string) (a []rune) {
 	for _, ch := range s {
@@ -663,6 +1044,15 @@ func split(s string) (a []rune) {
 	}
 	return
 }
+
+// isDateString returns true if the string looks like a date-only time literal.
+func isDateString(s string) bool { return dateStringRegexp.MatchString(s) }
+
+// isDateTimeString returns true if the string looks like a date+time time literal.
+func isDateTimeString(s string) bool { return dateTimeStringRegexp.MatchString(s) }
+
+var dateStringRegexp = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+var dateTimeStringRegexp = regexp.MustCompile(`^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?$`)
 
 // ErrInvalidDuration is returned when parsing a malformatted duration.
 var ErrInvalidDuration = errors.New("invalid duration")

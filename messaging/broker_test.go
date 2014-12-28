@@ -16,7 +16,18 @@ import (
 // Ensure that opening a broker without a path returns an error.
 func TestBroker_Open_ErrPathRequired(t *testing.T) {
 	b := messaging.NewBroker()
-	if err := b.Open(""); err != messaging.ErrPathRequired {
+	if err := b.Open("", "http://127.0.0.1:8080"); err != messaging.ErrPathRequired {
+		t.Fatalf("unexpected error: %s", err)
+	}
+}
+
+// Ensure that opening a broker without a connection address returns an error.
+func TestBroker_Open_ErrAddressRequired(t *testing.T) {
+	b := messaging.NewBroker()
+	f := tempfile()
+	defer os.Remove(f)
+
+	if err := b.Open(f, ""); err != messaging.ErrConnectionAddressRequired {
 		t.Fatalf("unexpected error: %s", err)
 	}
 }
@@ -36,12 +47,12 @@ func TestBroker_Publish(t *testing.T) {
 	defer b.Close()
 
 	// Create a new named replica.
-	if err := b.CreateReplica("node0"); err != nil {
+	if err := b.CreateReplica(2000); err != nil {
 		t.Fatalf("create replica: %s", err)
 	}
 
 	// Subscribe replica to a topic.
-	if err := b.Subscribe("node0", 20); err != nil {
+	if err := b.Subscribe(2000, 20); err != nil {
 		t.Fatalf("subscribe: %s", err)
 	}
 
@@ -59,7 +70,7 @@ func TestBroker_Publish(t *testing.T) {
 	// Read message from the replica.
 	var buf bytes.Buffer
 	go func() {
-		if _, err := b.Replica("node0").WriteTo(&buf); err != nil {
+		if _, err := b.Replica(2000).WriteTo(&buf); err != nil {
 			t.Fatalf("write to: %s", err)
 		}
 	}()
@@ -83,7 +94,7 @@ func TestBroker_Publish(t *testing.T) {
 	}
 
 	// Unsubscribe replica from the topic.
-	if err := b.Unsubscribe("node0", 20); err != nil {
+	if err := b.Unsubscribe(2000, 20); err != nil {
 		t.Fatalf("unsubscribe: %s", err)
 	}
 
@@ -110,8 +121,8 @@ func TestBroker_CreateReplica_ErrReplicaExists(t *testing.T) {
 	defer b.Close()
 
 	// Create a replica twice.
-	b.CreateReplica("node0")
-	if err := b.CreateReplica("node0"); err != messaging.ErrReplicaExists {
+	b.CreateReplica(2000)
+	if err := b.CreateReplica(2000); err != messaging.ErrReplicaExists {
 		t.Fatalf("unexpected error: %s", err)
 	}
 }
@@ -122,7 +133,7 @@ func TestBroker_DeleteReplica(t *testing.T) {
 	defer b.Close()
 
 	// Create a new named replica.
-	if err := b.CreateReplica("node0"); err != nil {
+	if err := b.CreateReplica(2000); err != nil {
 		t.Fatalf("create replica: %s", err)
 	}
 
@@ -130,7 +141,7 @@ func TestBroker_DeleteReplica(t *testing.T) {
 	var buf bytes.Buffer
 	var closed bool
 	go func() {
-		if _, err := b.Replica("node0").WriteTo(&buf); err != nil {
+		if _, err := b.Replica(2000).WriteTo(&buf); err != nil {
 			t.Fatalf("write to: %s", err)
 		}
 		closed = true
@@ -138,7 +149,7 @@ func TestBroker_DeleteReplica(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	// Delete the replica.
-	if err := b.DeleteReplica("node0"); err != nil {
+	if err := b.DeleteReplica(2000); err != nil {
 		t.Fatalf("delete replica: %s", err)
 	}
 	time.Sleep(10 * time.Millisecond)
@@ -149,7 +160,7 @@ func TestBroker_DeleteReplica(t *testing.T) {
 	}
 
 	// Ensure the replica no longer exists.
-	if r := b.Replica("node0"); r != nil {
+	if r := b.Replica(2000); r != nil {
 		t.Fatal("replica still exists")
 	}
 }
@@ -158,7 +169,7 @@ func TestBroker_DeleteReplica(t *testing.T) {
 func TestBroker_DeleteReplica_ErrReplicaNotFound(t *testing.T) {
 	b := NewBroker()
 	defer b.Close()
-	if err := b.DeleteReplica("no_such_replica"); err != messaging.ErrReplicaNotFound {
+	if err := b.DeleteReplica(0); err != messaging.ErrReplicaNotFound {
 		t.Fatalf("unexpected error: %s", err)
 	}
 }
@@ -167,8 +178,8 @@ func TestBroker_DeleteReplica_ErrReplicaNotFound(t *testing.T) {
 func TestBroker_Subscribe_ErrReplicaNotFound(t *testing.T) {
 	b := NewBroker()
 	defer b.Close()
-	b.CreateReplica("bar")
-	if err := b.Subscribe("foo", 20); err != messaging.ErrReplicaNotFound {
+	b.CreateReplica(2000)
+	if err := b.Subscribe(3000, 20); err != messaging.ErrReplicaNotFound {
 		t.Fatalf("unexpected error: %s", err)
 	}
 }
@@ -177,7 +188,7 @@ func TestBroker_Subscribe_ErrReplicaNotFound(t *testing.T) {
 func TestBroker_Unsubscribe_ErrReplicaNotFound(t *testing.T) {
 	b := NewBroker()
 	defer b.Close()
-	if err := b.Unsubscribe("foo", 20); err != messaging.ErrReplicaNotFound {
+	if err := b.Unsubscribe(0, 20); err != messaging.ErrReplicaNotFound {
 		t.Fatalf("unexpected error: %s", err)
 	}
 }
@@ -190,7 +201,7 @@ type Broker struct {
 // NewBroker returns a new open tempoarary broker.
 func NewBroker() *Broker {
 	b := messaging.NewBroker()
-	if err := b.Open(tempfile()); err != nil {
+	if err := b.Open(tempfile(), "http://127.0.0.1:8080"); err != nil {
 		panic("open: " + err.Error())
 	}
 	if err := b.Initialize(); err != nil {

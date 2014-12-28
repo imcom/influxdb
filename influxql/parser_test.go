@@ -52,20 +52,20 @@ func TestParser_ParseStatement(t *testing.T) {
 				Fields: influxql.Fields{
 					&influxql.Field{Expr: &influxql.Wildcard{}},
 				},
-				Source: &influxql.Series{Name: "myseries"},
+				Source: &influxql.Measurement{Name: "myseries"},
 			},
 		},
 
 		// SELECT statement
 		{
-			s: `SELECT field1, field2 ,field3 AS field_x FROM myseries WHERE host = 'hosta.influxdb.org' GROUP BY 10h LIMIT 20 ORDER BY ASC;`,
+			s: `SELECT field1, field2 ,field3 AS field_x FROM myseries WHERE host = 'hosta.influxdb.org' GROUP BY 10h ORDER BY ASC LIMIT 20;`,
 			stmt: &influxql.SelectStatement{
 				Fields: influxql.Fields{
 					&influxql.Field{Expr: &influxql.VarRef{Val: "field1"}},
 					&influxql.Field{Expr: &influxql.VarRef{Val: "field2"}},
 					&influxql.Field{Expr: &influxql.VarRef{Val: "field3"}, Alias: "field_x"},
 				},
-				Source: &influxql.Series{Name: "myseries"},
+				Source: &influxql.Measurement{Name: "myseries"},
 				Condition: &influxql.BinaryExpr{
 					Op:  influxql.EQ,
 					LHS: &influxql.VarRef{Val: "host"},
@@ -74,8 +74,39 @@ func TestParser_ParseStatement(t *testing.T) {
 				Dimensions: influxql.Dimensions{
 					&influxql.Dimension{Expr: &influxql.DurationLiteral{Val: 10 * time.Hour}},
 				},
-				Limit:     20,
-				Ascending: true,
+				Limit: 20,
+				SortFields: influxql.SortFields{
+					&influxql.SortField{Ascending: true},
+				},
+			},
+		},
+
+		// SELECT statement with JOIN
+		{
+			s: `SELECT field1 FROM join(aa,"bb", cc) JOIN cc`,
+			stmt: &influxql.SelectStatement{
+				Fields: influxql.Fields{&influxql.Field{Expr: &influxql.VarRef{Val: "field1"}}},
+				Source: &influxql.Join{
+					Measurements: influxql.Measurements{
+						{Name: "aa"},
+						{Name: "bb"},
+						{Name: "cc"},
+					},
+				},
+			},
+		},
+
+		// SELECT statement with MERGE
+		{
+			s: `SELECT field1 FROM merge(aa,b.b)`,
+			stmt: &influxql.SelectStatement{
+				Fields: influxql.Fields{&influxql.Field{Expr: &influxql.VarRef{Val: "field1"}}},
+				Source: &influxql.Merge{
+					Measurements: influxql.Measurements{
+						{Name: "aa"},
+						{Name: "b.b"},
+					},
+				},
 			},
 		},
 
@@ -84,7 +115,22 @@ func TestParser_ParseStatement(t *testing.T) {
 			s: `select my_field from myseries`,
 			stmt: &influxql.SelectStatement{
 				Fields: influxql.Fields{&influxql.Field{Expr: &influxql.VarRef{Val: "my_field"}}},
-				Source: &influxql.Series{Name: "myseries"},
+				Source: &influxql.Measurement{Name: "myseries"},
+			},
+		},
+
+		// SELECT statement with multiple ORDER BY fields
+		{
+			s: `SELECT field1 FROM myseries ORDER BY ASC, field1, field2 DESC LIMIT 10`,
+			stmt: &influxql.SelectStatement{
+				Fields: influxql.Fields{&influxql.Field{Expr: &influxql.VarRef{Val: "field1"}}},
+				Source: &influxql.Measurement{Name: "myseries"},
+				SortFields: influxql.SortFields{
+					&influxql.SortField{Ascending: true},
+					&influxql.SortField{Name: "field1"},
+					&influxql.SortField{Name: "field2"},
+				},
+				Limit: 10,
 			},
 		},
 
@@ -92,7 +138,7 @@ func TestParser_ParseStatement(t *testing.T) {
 		{
 			s: `DELETE FROM myseries WHERE host = 'hosta.influxdb.org'`,
 			stmt: &influxql.DeleteStatement{
-				Source: &influxql.Series{Name: "myseries"},
+				Source: &influxql.Measurement{Name: "myseries"},
 				Condition: &influxql.BinaryExpr{
 					Op:  influxql.EQ,
 					LHS: &influxql.VarRef{Val: "host"},
@@ -105,6 +151,118 @@ func TestParser_ParseStatement(t *testing.T) {
 		{
 			s:    `LIST SERIES`,
 			stmt: &influxql.ListSeriesStatement{},
+		},
+
+		// LIST SERIES WHERE with ORDER BY and LIMIT
+		{
+			s: `LIST SERIES WHERE region = 'uswest' ORDER BY ASC, field1, field2 DESC LIMIT 10`,
+			stmt: &influxql.ListSeriesStatement{
+				Condition: &influxql.BinaryExpr{
+					Op:  influxql.EQ,
+					LHS: &influxql.VarRef{Val: "region"},
+					RHS: &influxql.StringLiteral{Val: "uswest"},
+				},
+				SortFields: influxql.SortFields{
+					&influxql.SortField{Ascending: true},
+					&influxql.SortField{Name: "field1"},
+					&influxql.SortField{Name: "field2"},
+				},
+				Limit: 10,
+			},
+		},
+
+		// LIST MEASUREMENTS WHERE with ORDER BY and LIMIT
+		{
+			s: `LIST MEASUREMENTS WHERE region = 'uswest' ORDER BY ASC, field1, field2 DESC LIMIT 10`,
+			stmt: &influxql.ListMeasurementsStatement{
+				Condition: &influxql.BinaryExpr{
+					Op:  influxql.EQ,
+					LHS: &influxql.VarRef{Val: "region"},
+					RHS: &influxql.StringLiteral{Val: "uswest"},
+				},
+				SortFields: influxql.SortFields{
+					&influxql.SortField{Ascending: true},
+					&influxql.SortField{Name: "field1"},
+					&influxql.SortField{Name: "field2"},
+				},
+				Limit: 10,
+			},
+		},
+
+		// LIST TAG KEYS
+		{
+			s: `LIST TAG KEYS FROM src WHERE region = 'uswest' ORDER BY ASC, field1, field2 DESC LIMIT 10`,
+			stmt: &influxql.ListTagKeysStatement{
+				Source: &influxql.Measurement{Name: "src"},
+				Condition: &influxql.BinaryExpr{
+					Op:  influxql.EQ,
+					LHS: &influxql.VarRef{Val: "region"},
+					RHS: &influxql.StringLiteral{Val: "uswest"},
+				},
+				SortFields: influxql.SortFields{
+					&influxql.SortField{Ascending: true},
+					&influxql.SortField{Name: "field1"},
+					&influxql.SortField{Name: "field2"},
+				},
+				Limit: 10,
+			},
+		},
+
+		// LIST TAG VALUES
+		{
+			s: `LIST TAG VALUES FROM src WHERE region = 'uswest' ORDER BY ASC, field1, field2 DESC LIMIT 10`,
+			stmt: &influxql.ListTagValuesStatement{
+				Source: &influxql.Measurement{Name: "src"},
+				Condition: &influxql.BinaryExpr{
+					Op:  influxql.EQ,
+					LHS: &influxql.VarRef{Val: "region"},
+					RHS: &influxql.StringLiteral{Val: "uswest"},
+				},
+				SortFields: influxql.SortFields{
+					&influxql.SortField{Ascending: true},
+					&influxql.SortField{Name: "field1"},
+					&influxql.SortField{Name: "field2"},
+				},
+				Limit: 10,
+			},
+		},
+
+		// LIST FIELD KEYS
+		{
+			s: `LIST FIELD KEYS FROM src WHERE region = 'uswest' ORDER BY ASC, field1, field2 DESC LIMIT 10`,
+			stmt: &influxql.ListFieldKeysStatement{
+				Source: &influxql.Measurement{Name: "src"},
+				Condition: &influxql.BinaryExpr{
+					Op:  influxql.EQ,
+					LHS: &influxql.VarRef{Val: "region"},
+					RHS: &influxql.StringLiteral{Val: "uswest"},
+				},
+				SortFields: influxql.SortFields{
+					&influxql.SortField{Ascending: true},
+					&influxql.SortField{Name: "field1"},
+					&influxql.SortField{Name: "field2"},
+				},
+				Limit: 10,
+			},
+		},
+
+		// LIST FIELD VALUES
+		{
+			s: `LIST FIELD VALUES FROM src WHERE region = 'uswest' ORDER BY ASC, field1, field2 DESC LIMIT 10`,
+			stmt: &influxql.ListFieldValuesStatement{
+				Source: &influxql.Measurement{Name: "src"},
+				Condition: &influxql.BinaryExpr{
+					Op:  influxql.EQ,
+					LHS: &influxql.VarRef{Val: "region"},
+					RHS: &influxql.StringLiteral{Val: "uswest"},
+				},
+				SortFields: influxql.SortFields{
+					&influxql.SortField{Ascending: true},
+					&influxql.SortField{Name: "field1"},
+					&influxql.SortField{Name: "field2"},
+				},
+				Limit: 10,
+			},
 		},
 
 		// DROP SERIES statement
@@ -126,7 +284,7 @@ func TestParser_ParseStatement(t *testing.T) {
 				Name: "myquery",
 				Source: &influxql.SelectStatement{
 					Fields: influxql.Fields{&influxql.Field{Expr: &influxql.Call{Name: "count"}}},
-					Source: &influxql.Series{Name: "myseries"},
+					Source: &influxql.Measurement{Name: "myseries"},
 				},
 				Target: "foo",
 			},
@@ -142,16 +300,18 @@ func TestParser_ParseStatement(t *testing.T) {
 		{s: ``, err: `found EOF, expected SELECT at line 1, char 1`},
 		{s: `SELECT`, err: `found EOF, expected identifier, string, number, bool at line 1, char 8`},
 		{s: `blah blah`, err: `found blah, expected SELECT at line 1, char 1`},
-		{s: `SELECT field X`, err: `found X, expected FROM at line 1, char 14`},
-		{s: `SELECT field FROM "series" WHERE X +;`, err: `found ;, expected identifier, string, number, bool at line 1, char 37`},
-		{s: `SELECT field FROM myseries GROUP`, err: `found EOF, expected BY at line 1, char 34`},
-		{s: `SELECT field FROM myseries LIMIT`, err: `found EOF, expected number at line 1, char 34`},
-		{s: `SELECT field FROM myseries LIMIT 10.5`, err: `fractional parts not allowed in limit at line 1, char 34`},
-		{s: `SELECT field FROM myseries ORDER`, err: `found EOF, expected BY at line 1, char 34`},
-		{s: `SELECT field FROM myseries ORDER BY /`, err: `found /, expected ASC, DESC at line 1, char 37`},
-		{s: `SELECT field AS`, err: `found EOF, expected identifier, string at line 1, char 17`},
-		{s: `SELECT field FROM 12`, err: `found 12, expected identifier, string at line 1, char 19`},
-		{s: `SELECT field FROM myseries GROUP BY *`, err: `found *, expected identifier, string, number, bool at line 1, char 37`},
+		{s: `SELECT field1 X`, err: `found X, expected FROM at line 1, char 15`},
+		{s: `SELECT field1 FROM "series" WHERE X +;`, err: `found ;, expected identifier, string, number, bool at line 1, char 38`},
+		{s: `SELECT field1 FROM myseries GROUP`, err: `found EOF, expected BY at line 1, char 35`},
+		{s: `SELECT field1 FROM myseries LIMIT`, err: `found EOF, expected number at line 1, char 35`},
+		{s: `SELECT field1 FROM myseries LIMIT 10.5`, err: `fractional parts not allowed in limit at line 1, char 35`},
+		{s: `SELECT field1 FROM myseries LIMIT 0`, err: `LIMIT must be > 0 at line 1, char 35`},
+		{s: `SELECT field1 FROM myseries ORDER`, err: `found EOF, expected BY at line 1, char 35`},
+		{s: `SELECT field1 FROM myseries ORDER BY /`, err: `found /, expected identifier, ASC, or DESC at line 1, char 38`},
+		{s: `SELECT field1 FROM myseries ORDER BY 1`, err: `found 1, expected identifier, ASC, or DESC at line 1, char 38`},
+		{s: `SELECT field1 AS`, err: `found EOF, expected identifier, string at line 1, char 18`},
+		{s: `SELECT field1 FROM 12`, err: `found 12, expected identifier, string at line 1, char 20`},
+		{s: `SELECT field1 FROM myseries GROUP BY *`, err: `found *, expected identifier, string, number, bool at line 1, char 38`},
 		{s: `SELECT 1000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 FROM myseries`, err: `unable to parse number at line 1, char 8`},
 		{s: `SELECT 10.5h FROM myseries`, err: `found h, expected FROM at line 1, char 12`},
 		{s: `DELETE`, err: `found EOF, expected FROM at line 1, char 8`},
@@ -182,14 +342,18 @@ func TestParser_ParseExpr(t *testing.T) {
 		expr influxql.Expr
 		err  string
 	}{
-		// 0-4. Primitives
+		// Primitives
 		{s: `100`, expr: &influxql.NumberLiteral{Val: 100}},
 		{s: `"foo bar"`, expr: &influxql.StringLiteral{Val: "foo bar"}},
 		{s: `true`, expr: &influxql.BooleanLiteral{Val: true}},
 		{s: `false`, expr: &influxql.BooleanLiteral{Val: false}},
 		{s: `my_ident`, expr: &influxql.VarRef{Val: "my_ident"}},
+		{s: `"2000-01-01 00:00:00"`, expr: &influxql.TimeLiteral{Val: mustParseTime("2000-01-01T00:00:00Z")}},
+		{s: `"2000-01-32 00:00:00"`, err: `unable to parse datetime at line 1, char 1`},
+		{s: `"2000-01-01"`, expr: &influxql.TimeLiteral{Val: mustParseTime("2000-01-01T00:00:00Z")}},
+		{s: `"2000-01-99"`, err: `unable to parse date at line 1, char 1`},
 
-		// 5. Simple binary expression
+		// Simple binary expression
 		{
 			s: `1 + 2`,
 			expr: &influxql.BinaryExpr{
@@ -199,7 +363,7 @@ func TestParser_ParseExpr(t *testing.T) {
 			},
 		},
 
-		// 6. Binary expression with LHS precedence
+		// Binary expression with LHS precedence
 		{
 			s: `1 * 2 + 3`,
 			expr: &influxql.BinaryExpr{
@@ -213,7 +377,7 @@ func TestParser_ParseExpr(t *testing.T) {
 			},
 		},
 
-		// 7. Binary expression with RHS precedence
+		// Binary expression with RHS precedence
 		{
 			s: `1 + 2 * 3`,
 			expr: &influxql.BinaryExpr{
@@ -227,7 +391,7 @@ func TestParser_ParseExpr(t *testing.T) {
 			},
 		},
 
-		// 8. Binary expression with LHS paren group.
+		// Binary expression with LHS paren group.
 		{
 			s: `(1 + 2) * 3`,
 			expr: &influxql.BinaryExpr{
@@ -243,7 +407,7 @@ func TestParser_ParseExpr(t *testing.T) {
 			},
 		},
 
-		// 9. Complex binary expression.
+		// Complex binary expression.
 		{
 			s: `value + 3 < 30 AND 1 + 2 OR true`,
 			expr: &influxql.BinaryExpr{
@@ -269,7 +433,7 @@ func TestParser_ParseExpr(t *testing.T) {
 			},
 		},
 
-		// 10. Function call (empty)
+		// Function call (empty)
 		{
 			s: `my_func()`,
 			expr: &influxql.Call{
@@ -277,7 +441,7 @@ func TestParser_ParseExpr(t *testing.T) {
 			},
 		},
 
-		// 11. Function call (multi-arg)
+		// Function call (multi-arg)
 		{
 			s: `my_func(1, 2 + 3)`,
 			expr: &influxql.Call{
@@ -338,6 +502,67 @@ func TestParseDuration(t *testing.T) {
 	}
 }
 
+// Ensure a time duration can be formatted.
+func TestFormatDuration(t *testing.T) {
+	var tests = []struct {
+		d time.Duration
+		s string
+	}{
+		{d: 3 * time.Microsecond, s: `3`},
+		{d: 1001 * time.Microsecond, s: `1001`},
+		{d: 15 * time.Millisecond, s: `15ms`},
+		{d: 100 * time.Second, s: `100s`},
+		{d: 2 * time.Minute, s: `2m`},
+		{d: 2 * time.Hour, s: `2h`},
+		{d: 2 * 24 * time.Hour, s: `2d`},
+		{d: 2 * 7 * 24 * time.Hour, s: `2w`},
+	}
+
+	for i, tt := range tests {
+		s := influxql.FormatDuration(tt.d)
+		if tt.s != s {
+			t.Errorf("%d. %v: mismatch: %s != %s", i, tt.d, tt.s, s)
+		}
+	}
+}
+
+// Ensure a string can be quoted.
+func TestQuote(t *testing.T) {
+	for i, tt := range []struct {
+		in  string
+		out string
+	}{
+		{``, `""`},
+		{`foo`, `"foo"`},
+		{"foo\nbar", `"foo\nbar"`},
+		{`foo bar\\`, `"foo bar\\\\"`},
+		{`"foo"`, `"\"foo\""`},
+	} {
+		if out := influxql.Quote(tt.in); tt.out != out {
+			t.Errorf("%d. %s: mismatch: %s != %s", i, tt.in, tt.out, out)
+		}
+	}
+}
+
+// Ensure an identifier can be quoted when appropriate.
+func TestQuoteIdent(t *testing.T) {
+	for i, tt := range []struct {
+		ident string
+		s     string
+	}{
+		{``, `""`},
+		{`foo`, `foo`},
+		{`foo.bar.baz`, `foo.bar.baz`},
+		{`my var`, `"my var"`},
+		{`my-var`, `"my-var"`},
+		{`my_var`, `my_var`},
+	} {
+		if s := influxql.QuoteIdent(tt.ident); tt.s != s {
+			t.Errorf("%d. %s: mismatch: %s != %s", i, tt.ident, tt.s, s)
+		}
+	}
+}
+
 func BenchmarkParserParseStatement(b *testing.B) {
 	b.ReportAllocs()
 	s := `SELECT field FROM "series" WHERE value > 10`
@@ -349,6 +574,24 @@ func BenchmarkParserParseStatement(b *testing.B) {
 		}
 	}
 	b.SetBytes(int64(len(s)))
+}
+
+// MustParseSelectStatement parses a select statement. Panic on error.
+func MustParseSelectStatement(s string) *influxql.SelectStatement {
+	stmt, err := influxql.NewParser(strings.NewReader(s)).ParseStatement()
+	if err != nil {
+		panic(err.Error())
+	}
+	return stmt.(*influxql.SelectStatement)
+}
+
+// MustParseExpr parses an expression. Panic on error.
+func MustParseExpr(s string) influxql.Expr {
+	expr, err := influxql.NewParser(strings.NewReader(s)).ParseExpr()
+	if err != nil {
+		panic(err.Error())
+	}
+	return expr
 }
 
 // errstring converts an error to its string representation.
