@@ -9,14 +9,15 @@ import (
 )
 
 const logo = `
-+---------------------------------------------+
-|  _____        __ _            _____  ____   |
-| |_   _|      / _| |          |  __ \|  _ \  |
-|   | |  _ __ | |_| |_   ___  _| |  | | |_) | |
-|   | | | '_ \|  _| | | | \ \/ / |  | |  _ <  |
-|  _| |_| | | | | | | |_| |>  <| |__| | |_) | |
-| |_____|_| |_|_| |_|\__,_/_/\_\_____/|____/  |
-+---------------------------------------------+
+ 8888888           .d888 888                   8888888b.  888888b.
+   888            d88P"  888                   888  "Y88b 888  "88b
+   888            888    888                   888    888 888  .88P
+   888   88888b.  888888 888 888  888 888  888 888    888 8888888K.
+   888   888 "88b 888    888 888  888  Y8bd8P' 888    888 888  "Y88b
+   888   888  888 888    888 888  888   X88K   888    888 888    888
+   888   888  888 888    888 Y88b 888 .d8""8b. 888  .d88P 888   d88P
+ 8888888 888  888 888    888  "Y88888 888  888 8888888P"  8888888P"
+
 `
 
 // These variables are populated via the Go linker.
@@ -27,7 +28,6 @@ var (
 
 // Various constants used by the main package.
 const (
-	configDefaultPath   string = "/etc/influxdb.conf"
 	messagingClientFile string = "messaging"
 )
 
@@ -56,10 +56,6 @@ func main() {
 
 	// Extract name from args.
 	switch cmd {
-	case "create-cluster":
-		execCreateCluster(args[1:])
-	case "join-cluster":
-		execJoinCluster(args[1:])
 	case "run":
 		execRun(args[1:])
 	case "":
@@ -103,7 +99,6 @@ Usage:
 
 The commands are:
 
-    create-cluster       create a new node that other nodes can join to form a new cluster
     join-cluster         create a new node that will join an existing cluster
     run                  run node with existing configuration
     version              displays the InfluxDB version

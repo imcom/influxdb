@@ -51,7 +51,7 @@ func TestTransportMux_RequestVote_ErrUnsupportedScheme(t *testing.T) {
 func TestHTTPTransport_Heartbeat(t *testing.T) {
 	// Start mock HTTP server.
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if path := r.URL.Path; path != `/heartbeat` {
+		if path := r.URL.Path; path != `/raft/heartbeat` {
 			t.Fatalf("unexpected path: %q", path)
 		}
 		if term := r.FormValue("term"); term != `1` {
@@ -105,7 +105,7 @@ func TestHTTPTransport_Heartbeat_Err(t *testing.T) {
 		u, _ := url.Parse(s.URL)
 		_, _, err := raft.DefaultTransport.Heartbeat(u, 1, 2, 3)
 		if err == nil {
-			t.Errorf("%d. expected error")
+			t.Errorf("%d. expected error", i)
 		} else if tt.err != err.Error() {
 			t.Errorf("%d. error:\n\nexp: %s\n\ngot: %s", i, tt.err, err.Error())
 		}
@@ -128,7 +128,7 @@ func TestHTTPTransport_Heartbeat_ErrConnectionRefused(t *testing.T) {
 func TestHTTPTransport_ReadFrom(t *testing.T) {
 	// Start mock HTTP server.
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if path := r.URL.Path; path != `/stream` {
+		if path := r.URL.Path; path != `/raft/stream` {
 			t.Fatalf("unexpected path: %q", path)
 		}
 		if term := r.FormValue("id"); term != `1` {
@@ -191,7 +191,7 @@ func TestHTTPTransport_ReadFrom_ErrConnectionRefused(t *testing.T) {
 func TestHTTPTransport_RequestVote(t *testing.T) {
 	// Start mock HTTP server.
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if path := r.URL.Path; path != `/vote` {
+		if path := r.URL.Path; path != `/raft/vote` {
 			t.Fatalf("unexpected path: %s", path)
 		}
 		if term := r.FormValue("term"); term != `1` {

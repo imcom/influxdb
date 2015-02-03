@@ -1,8 +1,7 @@
 package influxdb
 
 import (
-	"sort"
-	"strings"
+	"encoding/binary"
 	"time"
 	"unsafe"
 
@@ -42,6 +41,8 @@ func (m *metastore) close() error {
 // init initializes the metastore to ensure all top-level buckets are created.
 func (m *metastore) init() error {
 	return m.db.Update(func(tx *bolt.Tx) error {
+		_, _ = tx.CreateBucketIfNotExists([]byte("Meta"))
+		_, _ = tx.CreateBucketIfNotExists([]byte("DataNodes"))
 		_, _ = tx.CreateBucketIfNotExists([]byte("Databases"))
 		_, _ = tx.CreateBucketIfNotExists([]byte("Users"))
 		return nil
@@ -65,7 +66,7 @@ func (m *metastore) mustView(fn func(*metatx) error) (err error) {
 		err = fn(tx)
 		return nil
 	}); e != nil {
-		panic("metastore view: " + err.Error())
+		panic("metastore view: " + e.Error())
 	}
 	return
 }
@@ -77,7 +78,7 @@ func (m *metastore) mustUpdate(fn func(*metatx) error) (err error) {
 		err = fn(tx)
 		return nil
 	}); e != nil {
-		panic("metastore update: " + err.Error())
+		panic("metastore update: " + e.Error())
 	}
 	return
 }
@@ -87,12 +88,70 @@ type metatx struct {
 	*bolt.Tx
 }
 
-// database returns a database from the metastore by name.
-func (tx *metatx) database(name string) (db *database) {
-	if b := tx.Bucket([]byte("Databases")).Bucket([]byte(name)); b != nil {
-		mustUnmarshalJSON(b.Get([]byte("meta")), &db)
+// id returns the server id.
+func (tx *metatx) id() (id uint64) {
+	if v := tx.Bucket([]byte("Meta")).Get([]byte("id")); v != nil {
+		id = btou64(v)
 	}
 	return
+}
+
+// setID sets the server id.
+func (tx *metatx) setID(v uint64) error {
+	return tx.Bucket([]byte("Meta")).Put([]byte("id"), u64tob(v))
+}
+
+// mustNextSequence generates a new sequence for a key in the meta bucket.
+func (tx *metatx) mustNextSequence(key []byte) (id uint64) {
+	// Retrieve the previous value, if it exists.
+	if v := tx.Bucket([]byte("Meta")).Get(key); v != nil {
+		id = btou64(v)
+	}
+	id++
+
+	// Save the new value.
+	// This panics on error because keys are hardcoded this shouldn't fail.
+	if err := tx.Bucket([]byte("Meta")).Put(key, u64tob(id)); err != nil {
+		panic("next seq: " + err.Error())
+	}
+	return
+}
+
+// nextShardID generates a new sequence id for a shard.
+func (tx *metatx) nextShardID() (id uint64) {
+	return tx.mustNextSequence([]byte("shardID"))
+}
+
+// nextShardGroupID generates a new sequence id for a shard group.
+func (tx *metatx) nextShardGroupID() (id uint64) {
+	return tx.mustNextSequence([]byte("shardGroupID"))
+}
+
+// dataNodes returns a list of all data nodes from the metastore.
+func (tx *metatx) dataNodes() (a []*DataNode) {
+	c := tx.Bucket([]byte("DataNodes")).Cursor()
+	for k, v := c.First(); k != nil; k, v = c.Next() {
+		n := newDataNode()
+		mustUnmarshalJSON(v, &n)
+		a = append(a, n)
+	}
+	return
+}
+
+// nextDataNodeID returns a autoincrementing id.
+func (tx *metatx) nextDataNodeID() uint64 {
+	id, _ := tx.Bucket([]byte("DataNodes")).NextSequence()
+	return id
+}
+
+// saveDataNode persists a data node to the metastore.
+func (tx *metatx) saveDataNode(n *DataNode) error {
+	return tx.Bucket([]byte("DataNodes")).Put(u64tob(n.ID), mustMarshalJSON(n))
+}
+
+// deleteDataNode removes data node from the metastore.
+func (tx *metatx) deleteDataNode(id uint64) error {
+	return tx.Bucket([]byte("DataNodes")).Delete(u64tob(id))
 }
 
 // databases returns a list of all databases from the metastore.
@@ -114,14 +173,9 @@ func (tx *metatx) saveDatabase(db *database) error {
 	if err != nil {
 		return err
 	}
-	_, err = b.CreateBucketIfNotExists([]byte("TagBytesToID"))
-	if err != nil {
-		return err
-	}
-	_, err = b.CreateBucketIfNotExists([]byte("Series"))
-	if err != nil {
-		return err
-	}
+	_, _ = b.CreateBucketIfNotExists([]byte("TagBytesToID"))
+	_, _ = b.CreateBucketIfNotExists([]byte("Measurements"))
+	_, _ = b.CreateBucketIfNotExists([]byte("Series"))
 	return b.Put([]byte("meta"), mustMarshalJSON(db))
 }
 
@@ -130,97 +184,60 @@ func (tx *metatx) deleteDatabase(name string) error {
 	return tx.Bucket([]byte("Databases")).DeleteBucket([]byte(name))
 }
 
-// returns a unique series id by database, name and tags. Returns ErrSeriesNotFound
-func (tx *metatx) seriesID(database, name string, tags map[string]string) (uint32, error) {
-	// get the bucket that holds series data for the database
-	b := tx.Bucket([]byte("Databases")).Bucket([]byte(database))
-	if b == nil {
-		return uint32(0), ErrDatabaseNotFound
-	}
-
-	// get the bucket that holds tag data for the series name
-	b = b.Bucket([]byte("TagBytesToID")).Bucket([]byte(name))
-	if b == nil {
-		return uint32(0), ErrSeriesNotFound
-	}
-
-	// look up the id of the tagset
-	tagBytes := tagsToBytes(tags)
-	v := b.Get(tagBytes)
-	if v == nil {
-		return uint32(0), ErrSeriesNotFound
-	}
-
-	// the value is the bytes for a uint32, return it
-	return *(*uint32)(unsafe.Pointer(&v[0])), nil
+// saveMeasurement persists a measurement to the metastore.
+func (tx *metatx) saveMeasurement(database string, m *Measurement) error {
+	b := tx.Bucket([]byte("Databases")).Bucket([]byte(database)).Bucket([]byte("Measurements"))
+	return b.Put([]byte(m.Name), mustMarshalJSON(m))
 }
 
 // sets the series id for the database, name, and tags.
-func (tx *metatx) createSeriesIfNotExists(database, name string, tags map[string]string) error {
+func (tx *metatx) createSeries(database, name string, tags map[string]string) (*Series, error) {
 	// create the buckets to store tag indexes for the series and give it a unique ID in the DB
 	db := tx.Bucket([]byte("Databases")).Bucket([]byte(database))
-	t := db.Bucket([]byte("TagBytesToID"))
+	t := db.Bucket([]byte("Series"))
 	b, err := t.CreateBucketIfNotExists([]byte(name))
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// give the series a unique ID
 	id, _ := t.NextSequence()
 
-	tagBytes := tagsToBytes(tags)
-
+	// store the tag map for the series
+	s := &Series{ID: uint32(id), Tags: tags}
 	idBytes := make([]byte, 4)
 	*(*uint32)(unsafe.Pointer(&idBytes[0])) = uint32(id)
 
-	if err := b.Put(tagBytes, idBytes); err != nil {
-		return err
+	if err := b.Put(idBytes, mustMarshalJSON(s)); err != nil {
+		return nil, err
 	}
-
-	// store the tag map for the series
-	b, err = db.Bucket([]byte("Series")).CreateBucketIfNotExists([]byte(name))
-	if err != nil {
-		return err
-	}
-
-	s := &Series{ID: uint32(id), Tags: tags}
-	return b.Put(idBytes, mustMarshalJSON(s))
+	return s, nil
 }
 
-// series returns all the measurements and series in a database
-func (tx *metatx) measurements(database string) []*Measurement {
+// loops through all the measurements and series in a database
+func (tx *metatx) indexDatabase(db *database) {
 	// get the bucket that holds series data for the database
-	b := tx.Bucket([]byte("Databases")).Bucket([]byte(database)).Bucket([]byte("Series"))
+	b := tx.Bucket([]byte("Databases")).Bucket([]byte(db.name))
 
-	measurements := make([]*Measurement, 0)
-	c := b.Cursor()
+	// Iterate over and index series.
+	seriesBucket := b.Bucket([]byte("Series"))
+	c := seriesBucket.Cursor()
 	for k, _ := c.First(); k != nil; k, _ = c.Next() {
-		mc := b.Bucket(k).Cursor()
-		m := &Measurement{Name: string(k), Series: make([]*Series, 0)}
+		mc := seriesBucket.Bucket(k).Cursor()
+		name := string(k)
 		for id, v := mc.First(); id != nil; id, v = mc.Next() {
 			var s *Series
 			mustUnmarshalJSON(v, &s)
-			m.Series = append(m.Series, s)
+			db.addSeriesToIndex(name, s)
 		}
-		measurements = append(measurements, m)
 	}
-	return measurements
-}
 
-// used to convert the tag set to bytes for use as a key in bolt
-func tagsToBytes(tags map[string]string) []byte {
-	s := make([]string, 0, len(tags))
-	// pull out keys to sort
-	for k := range tags {
-		s = append(s, k)
+	// Iterate over measurement metadata.
+	c = b.Bucket([]byte("Measurements")).Cursor()
+	for k, v := c.First(); k != nil; k, v = c.Next() {
+		m := db.createMeasurementIfNotExists(string(k))
+		mustUnmarshalJSON(v, &m)
 	}
-	sort.Strings(s)
-
-	// now append on the key values in key sorted order
-	for _, k := range s {
-		s = append(s, tags[k])
-	}
-	return []byte(strings.Join(s, "|"))
 }
 
 // user returns a user from the metastore by name.
@@ -251,3 +268,23 @@ func (tx *metatx) saveUser(u *User) error {
 func (tx *metatx) deleteUser(name string) error {
 	return tx.Bucket([]byte("Users")).Delete([]byte(name))
 }
+
+// u64tob converts a uint64 into an 8-byte slice.
+func u64tob(v uint64) []byte {
+	b := make([]byte, 8)
+	binary.BigEndian.PutUint64(b, v)
+	return b
+}
+
+// btou64 converts an 8-byte slice into an uint64.
+func btou64(b []byte) uint64 { return binary.BigEndian.Uint64(b) }
+
+// u32tob converts a uint32 into a 4-byte slice.
+func u32tob(v uint32) []byte {
+	b := make([]byte, 4)
+	binary.BigEndian.PutUint32(b, v)
+	return b
+}
+
+// btou32 converts an 4-byte slice into an uint32.
+func btou32(b []byte) uint32 { return binary.BigEndian.Uint32(b) }

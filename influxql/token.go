@@ -15,14 +15,14 @@ const (
 
 	literal_beg
 	// Literals
-	IDENT     // main
-	NUMBER    // 12345.67
-	DURATION  // 13h
-	STRING    // "abc"
-	BADSTRING // "abc
-	BADESCAPE // \q
-	TRUE      // true
-	FALSE     // false
+	IDENT        // main
+	NUMBER       // 12345.67
+	DURATION_VAL // 13h
+	STRING       // "abc"
+	BADSTRING    // "abc
+	BADESCAPE    // \q
+	TRUE         // true
+	FALSE        // false
 	literal_end
 
 	operator_beg
@@ -47,37 +47,66 @@ const (
 	RPAREN    // )
 	COMMA     // ,
 	SEMICOLON // ;
+	DOT       // .
 
 	keyword_beg
 	// Keywords
+	ALL
+	ALTER
 	AS
 	ASC
+	BEGIN
 	BY
 	CREATE
 	CONTINUOUS
+	DATABASE
+	DATABASES
+	DEFAULT
 	DELETE
 	DESC
 	DROP
+	DURATION
+	END
+	EXISTS
 	EXPLAIN
 	FIELD
 	FROM
+	GRANT
 	GROUP
+	IF
+	IN
 	INNER
 	INSERT
 	INTO
+	KEY
 	KEYS
 	LIMIT
-	LIST
+	SHOW
 	MEASUREMENT
 	MEASUREMENTS
+	OFFSET
+	ON
 	ORDER
+	PASSWORD
+	POLICY
+	POLICIES
+	PRIVILEGES
 	QUERIES
 	QUERY
+	READ
+	REPLICATION
+	RETENTION
+	REVOKE
 	SELECT
 	SERIES
 	TAG
+	TO
+	USER
+	USERS
 	VALUES
 	WHERE
+	WITH
+	WRITE
 	keyword_end
 )
 
@@ -86,11 +115,12 @@ var tokens = [...]string{
 	EOF:     "EOF",
 	WS:      "WS",
 
-	IDENT:  "IDENT",
-	NUMBER: "NUMBER",
-	STRING: "STRING",
-	TRUE:   "TRUE",
-	FALSE:  "FALSE",
+	IDENT:        "IDENT",
+	NUMBER:       "NUMBER",
+	DURATION_VAL: "DURATION_VAL",
+	STRING:       "STRING",
+	TRUE:         "TRUE",
+	FALSE:        "FALSE",
 
 	ADD: "+",
 	SUB: "-",
@@ -111,35 +141,64 @@ var tokens = [...]string{
 	RPAREN:    ")",
 	COMMA:     ",",
 	SEMICOLON: ";",
+	DOT:       ".",
 
+	ALL:          "ALL",
+	ALTER:        "ALTER",
 	AS:           "AS",
 	ASC:          "ASC",
+	BEGIN:        "BEGIN",
 	BY:           "BY",
 	CREATE:       "CREATE",
 	CONTINUOUS:   "CONTINUOUS",
+	DATABASE:     "DATABASE",
+	DATABASES:    "DATABASES",
+	DEFAULT:      "DEFAULT",
 	DELETE:       "DELETE",
 	DESC:         "DESC",
 	DROP:         "DROP",
+	DURATION:     "DURATION",
+	END:          "END",
+	EXISTS:       "EXISTS",
 	EXPLAIN:      "EXPLAIN",
 	FIELD:        "FIELD",
 	FROM:         "FROM",
+	GRANT:        "GRANT",
 	GROUP:        "GROUP",
+	IF:           "IF",
+	IN:           "IN",
 	INNER:        "INNER",
 	INSERT:       "INSERT",
 	INTO:         "INTO",
+	KEY:          "KEY",
 	KEYS:         "KEYS",
 	LIMIT:        "LIMIT",
-	LIST:         "LIST",
+	SHOW:         "SHOW",
 	MEASUREMENT:  "MEASUREMENT",
 	MEASUREMENTS: "MEASUREMENTS",
+	OFFSET:       "OFFSET",
+	ON:           "ON",
 	ORDER:        "ORDER",
+	PASSWORD:     "PASSWORD",
+	POLICY:       "POLICY",
+	POLICIES:     "POLICIES",
+	PRIVILEGES:   "PRIVILEGES",
 	QUERIES:      "QUERIES",
 	QUERY:        "QUERY",
+	READ:         "READ",
+	REPLICATION:  "REPLICATION",
+	RETENTION:    "RETENTION",
+	REVOKE:       "REVOKE",
 	SELECT:       "SELECT",
 	SERIES:       "SERIES",
 	TAG:          "TAG",
+	TO:           "TO",
+	USER:         "USER",
+	USERS:        "USERS",
 	VALUES:       "VALUES",
 	WHERE:        "WHERE",
+	WITH:         "WITH",
+	WRITE:        "WRITE",
 }
 
 var keywords map[string]Token

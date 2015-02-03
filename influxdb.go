@@ -17,6 +17,21 @@ var (
 	// ErrPathRequired is returned when opening a server without a path.
 	ErrPathRequired = errors.New("path required")
 
+	// ErrUnableToJoin is returned when a server cannot join a cluster.
+	ErrUnableToJoin = errors.New("unable to join")
+
+	// ErrDataNodeURLRequired is returned when creating a data node without a URL.
+	ErrDataNodeURLRequired = errors.New("data node url required")
+
+	// ErrDataNodeExists is returned when creating a duplicate data node.
+	ErrDataNodeExists = errors.New("data node exists")
+
+	// ErrDataNodeNotFound is returned when dropping a non-existent data node.
+	ErrDataNodeNotFound = errors.New("data node not found")
+
+	// ErrDataNodeRequired is returned when using a blank data node id.
+	ErrDataNodeRequired = errors.New("data node required")
+
 	// ErrDatabaseNameRequired is returned when creating a database without a name.
 	ErrDatabaseNameRequired = errors.New("database name required")
 
@@ -56,6 +71,10 @@ var (
 	// ErrRetentionPolicyNameRequired is returned using a blank shard space name.
 	ErrRetentionPolicyNameRequired = errors.New("retention policy name required")
 
+	// ErrDefaultRetentionPolicyNotFound is returned when using the default
+	// policy on a database but the default has not been set.
+	ErrDefaultRetentionPolicyNotFound = errors.New("default retention policy not found")
+
 	// ErrShardNotFound is returned writing to a non-existent shard.
 	ErrShardNotFound = errors.New("shard not found")
 
@@ -69,12 +88,47 @@ var (
 	// ErrInvalidQuery is returned when executing an unknown query type.
 	ErrInvalidQuery = errors.New("invalid query")
 
+	// ErrMeasurementNotFound is returned when a measurement does not exist.
+	ErrMeasurementNotFound = errors.New("measurement not found")
+
+	// ErrFieldOverflow is returned when too many fields are created on a measurement.
+	ErrFieldOverflow = errors.New("field overflow")
+
 	// ErrSeriesNotFound is returned when looking up a non-existent series by database, name and tags
 	ErrSeriesNotFound = errors.New("series not found")
 
 	// ErrSeriesExists is returned when attempting to set the id of a series by database, name and tags that already exists
 	ErrSeriesExists = errors.New("series already exists")
+
+	// ErrNotExecuted is returned when a statement is not executed in a query.
+	// This can occur when a previous statement in the same query has errored.
+	ErrNotExecuted = errors.New("not executed")
+
+	// ErrInvalidGrantRevoke is returned when a statement requests an invalid
+	// privilege for a user on the cluster or a database.
+	ErrInvalidGrantRevoke = errors.New("invalid privilege requested")
 )
+
+// ErrAuthorize represents an authorization error.
+type ErrAuthorize struct {
+	text string
+}
+
+// Error returns the text of the error.
+func (e *ErrAuthorize) Error() string {
+	return e.text
+}
+
+// authorize satisfies isAuthorizationError
+func (ErrAuthorize) authorize() {}
+
+func isAuthorizationError(err error) bool {
+	type authorize interface {
+		authorize()
+	}
+	_, ok := err.(authorize)
+	return ok
+}
 
 // mustMarshal encodes a value to JSON.
 // This will panic if an error occurs. This should only be used internally when

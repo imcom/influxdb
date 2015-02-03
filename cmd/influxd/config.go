@@ -2,11 +2,19 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"net"
+	"net/url"
 	"os"
+	"os/user"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/influxdb/influxdb/collectd"
+	"github.com/influxdb/influxdb/graphite"
 )
 
 const (
@@ -20,9 +28,17 @@ const (
 	// can be queried concurrently at one time.
 	DefaultConcurrentShardQueryLimit = 10
 
-	// DefaultAPIReadTimeout represents the amount time before an API request
-	// times out.
+	// DefaultAPIReadTimeout represents the duration before an API request times out.
 	DefaultAPIReadTimeout = 5 * time.Second
+
+	// DefaultBrokerPort represents the default port the broker runs on.
+	DefaultBrokerPort = 8086
+
+	// DefaultDataPort represents the default port the data server runs on.
+	DefaultDataPort = 8086
+
+	// DefaultJoinURLs represents the default URLs for joining a cluster.
+	DefaultJoinURLs = ""
 )
 
 // Config represents the configuration format for the influxd binary.
@@ -32,6 +48,14 @@ type Config struct {
 	ReportingDisabled bool   `toml:"reporting-disabled"`
 	Version           string `toml:"-"`
 	InfluxDBVersion   string `toml:"-"`
+
+	Initialization struct {
+		JoinURLs string `toml:"join-urls"`
+	} `toml:"initialization"`
+
+	Authentication struct {
+		Enabled bool `toml:"enabled"`
+	} `toml:"authentication"`
 
 	Admin struct {
 		Port   int    `toml:"port"`
@@ -45,13 +69,10 @@ type Config struct {
 		ReadTimeout Duration `toml:"read-timeout"`
 	} `toml:"api"`
 
+	Graphites []Graphite `toml:"graphite"`
+	Collectd  Collectd   `toml:"collectd"`
+
 	InputPlugins struct {
-		Graphite struct {
-			Enabled    bool   `toml:"enabled"`
-			Port       int    `toml:"port"`
-			Database   string `toml:"database"`
-			UDPEnabled bool   `toml:"udp_enabled"`
-		} `toml:"graphite"`
 		UDPInput struct {
 			Enabled  bool   `toml:"enabled"`
 			Port     int    `toml:"port"`
@@ -64,53 +85,44 @@ type Config struct {
 		} `toml:"udp_servers"`
 	} `toml:"input_plugins"`
 
-	Raft struct {
+	Broker struct {
 		Port    int      `toml:"port"`
 		Dir     string   `toml:"dir"`
 		Timeout Duration `toml:"election-timeout"`
-	} `toml:"raft"`
+	} `toml:"broker"`
 
-	Storage struct {
+	Data struct {
 		Dir                  string                    `toml:"dir"`
+		Port                 int                       `toml:"port"`
 		WriteBufferSize      int                       `toml:"write-buffer-size"`
 		MaxOpenShards        int                       `toml:"max-open-shards"`
 		PointBatchSize       int                       `toml:"point-batch-size"`
 		WriteBatchSize       int                       `toml:"write-batch-size"`
 		Engines              map[string]toml.Primitive `toml:"engines"`
 		RetentionSweepPeriod Duration                  `toml:"retention-sweep-period"`
-	} `toml:"storage"`
+	} `toml:"data"`
 
 	Cluster struct {
-		Dir                       string   `toml:"dir"`
-		ProtobufPort              int      `toml:"protobuf_port"`
-		ProtobufTimeout           Duration `toml:"protobuf_timeout"`
-		ProtobufHeartbeatInterval Duration `toml:"protobuf_heartbeat"`
-		MinBackoff                Duration `toml:"protobuf_min_backoff"`
-		MaxBackoff                Duration `toml:"protobuf_max_backoff"`
-		WriteBufferSize           int      `toml:"write-buffer-size"`
-		ConcurrentShardQueryLimit int      `toml:"concurrent-shard-query-limit"`
-		MaxResponseBufferSize     int      `toml:"max-response-buffer-size"`
+		Dir string `toml:"dir"`
 	} `toml:"cluster"`
 
 	Logging struct {
-		File  string `toml:"file"`
-		Level string `toml:"level"`
+		File string `toml:"file"`
 	} `toml:"logging"`
 }
 
 // NewConfig returns an instance of Config with reasonable defaults.
 func NewConfig() *Config {
+	u, _ := user.Current()
+
 	c := &Config{}
-	c.Storage.RetentionSweepPeriod = Duration(10 * time.Minute)
-	c.Cluster.ConcurrentShardQueryLimit = DefaultConcurrentShardQueryLimit
-	c.Raft.Timeout = Duration(1 * time.Second)
-	c.HTTPAPI.ReadTimeout = Duration(DefaultAPIReadTimeout)
-	c.Cluster.MinBackoff = Duration(1 * time.Second)
-	c.Cluster.MaxBackoff = Duration(10 * time.Second)
-	c.Cluster.ProtobufHeartbeatInterval = Duration(10 * time.Millisecond)
-	c.Storage.WriteBufferSize = 1000
-	c.Cluster.WriteBufferSize = 1000
-	c.Cluster.MaxResponseBufferSize = 100
+	c.Data.RetentionSweepPeriod = Duration(10 * time.Minute)
+	c.Broker.Dir = filepath.Join(u.HomeDir, ".influxdb/broker")
+	c.Broker.Port = DefaultBrokerPort
+	c.Broker.Timeout = Duration(1 * time.Second)
+	c.Data.Dir = filepath.Join(u.HomeDir, ".influxdb/data")
+	c.Data.Port = DefaultDataPort
+	c.Data.WriteBufferSize = 1000
 
 	// Detect hostname (or set to localhost).
 	if c.Hostname, _ = os.Hostname(); c.Hostname == "" {
@@ -127,44 +139,81 @@ func NewConfig() *Config {
 	return c
 }
 
-// PointBatchSize returns the storage point batch size, if set.
+// PointBatchSize returns the data point batch size, if set.
 // If not set, the LevelDB point batch size is returned.
 // If that is not set then the default point batch size is returned.
 func (c *Config) PointBatchSize() int {
-	if c.Storage.PointBatchSize != 0 {
-		return c.Storage.PointBatchSize
+	if c.Data.PointBatchSize != 0 {
+		return c.Data.PointBatchSize
 	}
 	return DefaultPointBatchSize
 }
 
-// WriteBatchSize returns the storage write batch size, if set.
+// WriteBatchSize returns the data write batch size, if set.
 // If not set, the LevelDB write batch size is returned.
 // If that is not set then the default write batch size is returned.
 func (c *Config) WriteBatchSize() int {
-	if c.Storage.WriteBatchSize != 0 {
-		return c.Storage.WriteBatchSize
+	if c.Data.WriteBatchSize != 0 {
+		return c.Data.WriteBatchSize
 	}
 	return DefaultWriteBatchSize
 }
 
 // MaxOpenShards returns the maximum number of shards to keep open at once.
 func (c *Config) MaxOpenShards() int {
-	return c.Storage.MaxOpenShards
+	return c.Data.MaxOpenShards
 }
 
-// ApiHTTPListenAddr returns the binding address the API HTTP server
-func (c *Config) ApiHTTPListenAddr() string {
-	return fmt.Sprintf("%s:%d", c.BindAddress, c.HTTPAPI.Port)
+// DataAddr returns the binding address the data server
+func (c *Config) DataAddr() string {
+	return net.JoinHostPort(c.BindAddress, strconv.Itoa(c.Data.Port))
 }
 
-// RaftListenAddr returns the binding address the Raft server
-func (c *Config) RaftListenAddr() string {
-	return fmt.Sprintf("%s:%d", c.BindAddress, c.Raft.Port)
+// DataURL returns the URL required to contact the data server.
+func (c *Config) DataURL() *url.URL {
+	return &url.URL{
+		Scheme: "http",
+		Host:   net.JoinHostPort(c.Hostname, strconv.Itoa(c.Data.Port)),
+	}
 }
 
-// RaftConnectionString returns the address required to contact the Raft server
-func (c *Config) RaftConnectionString() string {
-	return fmt.Sprintf("http://%s:%d", c.Hostname, c.Raft.Port)
+// BrokerAddr returns the binding address the Broker server
+func (c *Config) BrokerAddr() string {
+	return fmt.Sprintf("%s:%d", c.BindAddress, c.Broker.Port)
+}
+
+// BrokerURL returns the URL required to contact the Broker server.
+func (c *Config) BrokerURL() *url.URL {
+	return &url.URL{
+		Scheme: "http",
+		Host:   net.JoinHostPort(c.Hostname, strconv.Itoa(c.Broker.Port)),
+	}
+}
+
+// BrokerDir returns the data directory to start up in and does home directory expansion if necessary.
+func (c *Config) BrokerDir() string {
+	p, e := filepath.Abs(c.Broker.Dir)
+	if e != nil {
+		log.Fatalf("Unable to get absolute path for Broker Directory: %q", c.Broker.Dir)
+	}
+	return p
+}
+
+// DataDir returns the data directory to start up in and does home directory expansion if necessary.
+func (c *Config) DataDir() string {
+	p, e := filepath.Abs(c.Data.Dir)
+	if e != nil {
+		log.Fatalf("Unable to get absolute path for Data Directory: %q", c.Data.Dir)
+	}
+	return p
+}
+
+func (c *Config) JoinURLs() string {
+	if c.Initialization.JoinURLs == "" {
+		return DefaultJoinURLs
+	} else {
+		return c.Initialization.JoinURLs
+	}
 }
 
 // Size represents a TOML parseable file size.
@@ -238,41 +287,74 @@ func ParseConfig(s string) (*Config, error) {
 	return c, nil
 }
 
-/*
-func (c *Config) AdminHTTPPortString() string {
-	if c.AdminHTTPPort <= 0 {
-		return ""
+type Collectd struct {
+	Addr string `toml:"address"`
+	Port uint16 `toml:"port"`
+
+	Database string `toml:"database"`
+	Enabled  bool   `toml:"enabled"`
+	TypesDB  string `toml:"typesdb"`
+}
+
+// ConnnectionString returns the connection string for this collectd config in the form host:port.
+func (c *Collectd) ConnectionString(defaultBindAddr string) string {
+	addr := c.Addr
+	// If no address specified, use default.
+	if addr == "" {
+		addr = defaultBindAddr
 	}
-	return fmt.Sprintf("%s:%d", c.BindAddress, c.AdminHTTPPort)
-}
 
-func (c *Config) APIHTTPSPortString() string {
-	return fmt.Sprintf("%s:%d", c.BindAddress, c.APIHTTPSPort)
-}
-
-func (c *Config) GraphitePortString() string {
-	if c.GraphitePort <= 0 {
-		return ""
+	port := c.Port
+	// If no port specified, use default.
+	if port == 0 {
+		port = collectd.DefaultPort
 	}
-	return fmt.Sprintf("%s:%d", c.BindAddress, c.GraphitePort)
+
+	return fmt.Sprintf("%s:%d", addr, port)
 }
 
-func (c *Config) UDPInputPortString(port int) string {
-	if port <= 0 {
-		return ""
+type Graphite struct {
+	Addr string `toml:"address"`
+	Port uint16 `toml:"port"`
+
+	Database      string `toml:"database"`
+	Enabled       bool   `toml:"enabled"`
+	Protocol      string `toml:"protocol"`
+	NamePosition  string `toml:"name-position"`
+	NameSeparator string `toml:"name-separator"`
+}
+
+// ConnnectionString returns the connection string for this Graphite config in the form host:port.
+func (g *Graphite) ConnectionString(defaultBindAddr string) string {
+
+	addr := g.Addr
+	// If no address specified, use default.
+	if addr == "" {
+		addr = defaultBindAddr
 	}
-	return fmt.Sprintf("%s:%d", c.BindAddress, port)
+
+	port := g.Port
+	// If no port specified, use default.
+	if port == 0 {
+		port = graphite.DefaultGraphitePort
+	}
+
+	return fmt.Sprintf("%s:%d", addr, port)
 }
 
-func (c *Config) ProtobufConnectionString() string {
-	return fmt.Sprintf("%s:%d", c.Hostname, c.ProtobufPort)
+// NameSeparatorString returns the character separating fields for Graphite data, or the default
+// if no separator is set.
+func (g *Graphite) NameSeparatorString() string {
+	if g.NameSeparator == "" {
+		return graphite.DefaultGraphiteNameSeparator
+	}
+	return g.NameSeparator
 }
 
-func (c *Config) ProtobufListenString() string {
-	return fmt.Sprintf("%s:%d", c.BindAddress, c.ProtobufPort)
+// LastEnabled returns whether the Graphite Server shoudl intepret the last field as "name".
+func (g *Graphite) LastEnabled() bool {
+	return g.NamePosition == strings.ToLower("last")
 }
-
-*/
 
 // maxInt is the largest integer representable by a word (architeture dependent).
 const maxInt = int64(^uint(0) >> 1)

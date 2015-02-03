@@ -19,21 +19,21 @@ second to sign our CLA, which can be found
 Installing go
 -------------
 
-I recommend using gvm which is a go version manager. For instructions
+We recommend using gvm, a Go version manager. For instructions
 on how to install see
-[gvm page on github](https://github.com/moovweb/gvm). InfluxDB
-currently works with go 1.3 and newer version only.
+[the gvm page on github](https://github.com/moovweb/gvm). InfluxDB
+currently works with Go 1.4 and up.
 
 After installing gvm you can install and set the default go version by
 running the following:
 
-    gvm install go1.3
-    gvm use go1.3 --default
+    gvm install go1.4
+    gvm use go1.4 --default
 
 Project structure
 -----------------
 
-First you need to setup the project structure
+First you need to setup the project structure:
 
     export GOPATH=$HOME/gocodez
     mkdir -p $GOPATH/src/github.com/influxdb
@@ -45,7 +45,7 @@ file to be set for every shell instead of having to manually run it
 everytime.
 
 We have a pre commit hook to make sure code is formatted properly
-before you commit any changes. We strongly recommend using the pre
+and vetted before you commit any changes. We strongly recommend using the pre
 commit hook to guard against accidentally committing unformatted
 code. To use the pre-commit hook, run the following:
 
@@ -55,18 +55,32 @@ code. To use the pre-commit hook, run the following:
 In case the commit is rejected because it's not formatted you can run
 the following to format the code:
 
+```
+go fmt ./...
+go vet ./...
+```
+
+To install go vet, run the following command:
+```
+go get golang.org/x/tools/cmd/vet
+```
+
+For more information on `go vet`, [read the GoDoc](https://godoc.org/golang.org/x/tools/cmd/vet).
+
 Build and Test
 -----
 
-Make sure you have Go installed. To build the project, execute the following commands:
+Make sure you have Go installed and the project structure as shown above. To then build the project, execute the following commands:
 
 ```bash
 cd $GOPATH/src/github.com/influxdb
-go get -u ./...
+go get -u -f ./...
 go build ./...
 ```
 
-Once compilation completes, the binaries can be found in `$GOPATH/bin`. To set the version and commit flags pass the following to the build command:
+Once compilation completes, the binaries can be found in `$GOPATH/bin`. Please note that the InfluxDB binary is named `influxd`, not `influxdb`.
+
+To set the version and commit flags during the build pass the following to the build command:
 
 ```bash
 -ldflags="-X main.version $VERSION -X main.commit $COMMIT"

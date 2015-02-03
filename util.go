@@ -6,11 +6,15 @@ import (
 	"code.google.com/p/log4go"
 )
 
+// TimePrecision represents a level of time precision.
 type TimePrecision int
 
 const (
+	// MicrosecondPrecision is 1/1,000,000 th of a second.
 	MicrosecondPrecision TimePrecision = iota
+	// MillisecondPrecision is 1/1,000 th of a second.
 	MillisecondPrecision
+	// SecondPrecision is 1 second precision.
 	SecondPrecision
 )
 
@@ -62,4 +66,31 @@ func removeField(fields []string, name string) []string {
 func removeTimestampFieldDefinition(fields []string) []string {
 	fields = removeField(fields, "time")
 	return removeField(fields, "sequence_number")
+}
+
+func mapKeyList(m interface{}) []string {
+
+	switch m.(type) {
+	case map[string]string:
+		return mapStrStrKeyList(m.(map[string]string))
+	case map[string]uint32:
+		return mapStrUint32KeyList(m.(map[string]uint32))
+	}
+	return nil
+}
+
+func mapStrStrKeyList(m map[string]string) []string {
+	l := make([]string, 0, len(m))
+	for k := range m {
+		l = append(l, k)
+	}
+	return l
+}
+
+func mapStrUint32KeyList(m map[string]uint32) []string {
+	l := make([]string, 0, len(m))
+	for k := range m {
+		l = append(l, k)
+	}
+	return l
 }

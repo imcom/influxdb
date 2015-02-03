@@ -2,6 +2,7 @@ package influxql
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -12,11 +13,17 @@ import (
 type DataType string
 
 const (
-	Unknown  = DataType("")
-	Number   = DataType("number")
-	Boolean  = DataType("boolean")
-	String   = DataType("string")
-	Time     = DataType("time")
+	// Unknown primitive data type.
+	Unknown = DataType("")
+	// Number means the data type is an int or float.
+	Number = DataType("number")
+	// Boolean means the data type is a boolean.
+	Boolean = DataType("boolean")
+	// String means the data type is a string of text.
+	String = DataType("string")
+	// Time means the data type is a time.
+	Time = DataType("time")
+	// Duration means the data type is a duration of time.
 	Duration = DataType("duration")
 )
 
@@ -44,42 +51,56 @@ type Node interface {
 	String() string
 }
 
-func (_ *Query) node()     {}
-func (_ Statements) node() {}
+func (*Query) node()     {}
+func (Statements) node() {}
 
-func (_ *SelectStatement) node()                {}
-func (_ *DeleteStatement) node()                {}
-func (_ *ListSeriesStatement) node()            {}
-func (_ *ListMeasurementsStatement) node()      {}
-func (_ *ListTagKeysStatement) node()           {}
-func (_ *ListTagValuesStatement) node()         {}
-func (_ *ListFieldKeysStatement) node()         {}
-func (_ *ListFieldValuesStatement) node()       {}
-func (_ *DropSeriesStatement) node()            {}
-func (_ *ListContinuousQueriesStatement) node() {}
-func (_ *CreateContinuousQueryStatement) node() {}
-func (_ *DropContinuousQueryStatement) node()   {}
+func (*AlterRetentionPolicyStatement) node()  {}
+func (*CreateContinuousQueryStatement) node() {}
+func (*CreateDatabaseStatement) node()        {}
+func (*CreateRetentionPolicyStatement) node() {}
+func (*CreateUserStatement) node()            {}
+func (*DeleteStatement) node()                {}
+func (*DropContinuousQueryStatement) node()   {}
+func (*DropDatabaseStatement) node()          {}
+func (*DropRetentionPolicyStatement) node()   {}
+func (*DropSeriesStatement) node()            {}
+func (*DropUserStatement) node()              {}
+func (*GrantStatement) node()                 {}
+func (*ShowContinuousQueriesStatement) node() {}
+func (*ShowDatabasesStatement) node()         {}
+func (*ShowFieldKeysStatement) node()         {}
+func (*ShowFieldValuesStatement) node()       {}
+func (*ShowRetentionPoliciesStatement) node() {}
+func (*ShowMeasurementsStatement) node()      {}
+func (*ShowSeriesStatement) node()            {}
+func (*ShowTagKeysStatement) node()           {}
+func (*ShowTagValuesStatement) node()         {}
+func (*ShowUsersStatement) node()             {}
+func (*RevokeStatement) node()                {}
+func (*SelectStatement) node()                {}
 
-func (_ Fields) node()           {}
-func (_ *Field) node()           {}
-func (_ Dimensions) node()       {}
-func (_ *Dimension) node()       {}
-func (_ *Measurement) node()     {}
-func (_ Measurements) node()     {}
-func (_ *Join) node()            {}
-func (_ *Merge) node()           {}
-func (_ *VarRef) node()          {}
-func (_ *Call) node()            {}
-func (_ *NumberLiteral) node()   {}
-func (_ *StringLiteral) node()   {}
-func (_ *BooleanLiteral) node()  {}
-func (_ *TimeLiteral) node()     {}
-func (_ *DurationLiteral) node() {}
-func (_ *BinaryExpr) node()      {}
-func (_ *ParenExpr) node()       {}
-func (_ *Wildcard) node()        {}
-func (_ SortFields) node()       {}
-func (_ *SortField) node()       {}
+func (*BinaryExpr) node()      {}
+func (*BooleanLiteral) node()  {}
+func (*Call) node()            {}
+func (*Dimension) node()       {}
+func (Dimensions) node()       {}
+func (*DurationLiteral) node() {}
+func (*Field) node()           {}
+func (Fields) node()           {}
+func (*Join) node()            {}
+func (*Measurement) node()     {}
+func (Measurements) node()     {}
+func (*nilLiteral) node()      {}
+func (*Merge) node()           {}
+func (*NumberLiteral) node()   {}
+func (*ParenExpr) node()       {}
+func (*SortField) node()       {}
+func (SortFields) node()       {}
+func (*StringLiteral) node()   {}
+func (*Target) node()          {}
+func (*TimeLiteral) node()     {}
+func (*VarRef) node()          {}
+func (*Wildcard) node()        {}
 
 // Query represents a collection of ordered statements.
 type Query struct {
@@ -105,20 +126,47 @@ func (a Statements) String() string {
 type Statement interface {
 	Node
 	stmt()
+	RequiredPrivileges() ExecutionPrivileges
 }
 
-func (_ *SelectStatement) stmt()                {}
-func (_ *DeleteStatement) stmt()                {}
-func (_ *ListSeriesStatement) stmt()            {}
-func (_ *DropSeriesStatement) stmt()            {}
-func (_ *ListContinuousQueriesStatement) stmt() {}
-func (_ *CreateContinuousQueryStatement) stmt() {}
-func (_ *DropContinuousQueryStatement) stmt()   {}
-func (_ *ListMeasurementsStatement) stmt()      {}
-func (_ *ListTagKeysStatement) stmt()           {}
-func (_ *ListTagValuesStatement) stmt()         {}
-func (_ *ListFieldKeysStatement) stmt()         {}
-func (_ *ListFieldValuesStatement) stmt()       {}
+// ExecutionPrivilege is a privilege required for a user to execute
+// a statement on a database or resource.
+type ExecutionPrivilege struct {
+	// Name of the database or resource.
+	// If "", then the resource is the cluster.
+	Name string
+
+	// Privilege required.
+	Privilege Privilege
+}
+
+// ExecutionPrivileges is a list of privileges required to execute a statement.
+type ExecutionPrivileges []ExecutionPrivilege
+
+func (*AlterRetentionPolicyStatement) stmt()  {}
+func (*CreateContinuousQueryStatement) stmt() {}
+func (*CreateDatabaseStatement) stmt()        {}
+func (*CreateRetentionPolicyStatement) stmt() {}
+func (*CreateUserStatement) stmt()            {}
+func (*DeleteStatement) stmt()                {}
+func (*DropContinuousQueryStatement) stmt()   {}
+func (*DropDatabaseStatement) stmt()          {}
+func (*DropRetentionPolicyStatement) stmt()   {}
+func (*DropSeriesStatement) stmt()            {}
+func (*DropUserStatement) stmt()              {}
+func (*GrantStatement) stmt()                 {}
+func (*ShowContinuousQueriesStatement) stmt() {}
+func (*ShowDatabasesStatement) stmt()         {}
+func (*ShowFieldKeysStatement) stmt()         {}
+func (*ShowFieldValuesStatement) stmt()       {}
+func (*ShowMeasurementsStatement) stmt()      {}
+func (*ShowRetentionPoliciesStatement) stmt() {}
+func (*ShowSeriesStatement) stmt()            {}
+func (*ShowTagKeysStatement) stmt()           {}
+func (*ShowTagValuesStatement) stmt()         {}
+func (*ShowUsersStatement) stmt()             {}
+func (*RevokeStatement) stmt()                {}
+func (*SelectStatement) stmt()                {}
 
 // Expr represents an expression that can be evaluated to a value.
 type Expr interface {
@@ -126,16 +174,17 @@ type Expr interface {
 	expr()
 }
 
-func (_ *VarRef) expr()          {}
-func (_ *Call) expr()            {}
-func (_ *NumberLiteral) expr()   {}
-func (_ *StringLiteral) expr()   {}
-func (_ *BooleanLiteral) expr()  {}
-func (_ *TimeLiteral) expr()     {}
-func (_ *DurationLiteral) expr() {}
-func (_ *BinaryExpr) expr()      {}
-func (_ *ParenExpr) expr()       {}
-func (_ *Wildcard) expr()        {}
+func (*BinaryExpr) expr()      {}
+func (*BooleanLiteral) expr()  {}
+func (*Call) expr()            {}
+func (*DurationLiteral) expr() {}
+func (*nilLiteral) expr()      {}
+func (*NumberLiteral) expr()   {}
+func (*ParenExpr) expr()       {}
+func (*StringLiteral) expr()   {}
+func (*TimeLiteral) expr()     {}
+func (*VarRef) expr()          {}
+func (*Wildcard) expr()        {}
 
 // Source represents a source of data for a statement.
 type Source interface {
@@ -143,11 +192,11 @@ type Source interface {
 	source()
 }
 
-func (_ *Measurement) source() {}
-func (_ *Join) source()        {}
-func (_ *Merge) source()       {}
+func (*Join) source()        {}
+func (*Measurement) source() {}
+func (*Merge) source()       {}
 
-// SortField represens a field to sort results by.
+// SortField represents a field to sort results by.
 type SortField struct {
 	// Name of the field
 	Name string
@@ -177,10 +226,309 @@ func (a SortFields) String() string {
 	return strings.Join(fields, ", ")
 }
 
+// CreateDatabaseStatement represents a command for creating a new database.
+type CreateDatabaseStatement struct {
+	// Name of the database to be created.
+	Name string
+}
+
+// String returns a string representation of the create database statement.
+func (s *CreateDatabaseStatement) String() string {
+	var buf bytes.Buffer
+	_, _ = buf.WriteString("CREATE DATABASE ")
+	_, _ = buf.WriteString(s.Name)
+	return buf.String()
+}
+
+// RequiredPrivileges returns the privilege required to execute a CreateDatabaseStatement.
+func (s *CreateDatabaseStatement) RequiredPrivileges() ExecutionPrivileges {
+	return ExecutionPrivileges{{Name: "", Privilege: AllPrivileges}}
+}
+
+// DropDatabaseStatement represents a command to drop a database.
+type DropDatabaseStatement struct {
+	// Name of the database to be dropped.
+	Name string
+}
+
+// String returns a string representation of the drop database statement.
+func (s *DropDatabaseStatement) String() string {
+	var buf bytes.Buffer
+	_, _ = buf.WriteString("DROP DATABASE ")
+	_, _ = buf.WriteString(s.Name)
+	return buf.String()
+}
+
+// RequiredPrivileges returns the privilege required to execute a DropDatabaseStatement.
+func (s *DropDatabaseStatement) RequiredPrivileges() ExecutionPrivileges {
+	return ExecutionPrivileges{{Name: "", Privilege: AllPrivileges}}
+}
+
+// DropRetentionPolicyStatement represents a command to drop a retention policy from a database.
+type DropRetentionPolicyStatement struct {
+	// Name of the policy to drop.
+	Name string
+
+	// Name of the database to drop the policy from.
+	Database string
+}
+
+// String returns a string representation of the drop retention policy statement.
+func (s *DropRetentionPolicyStatement) String() string {
+	var buf bytes.Buffer
+	_, _ = buf.WriteString("DROP RETENTION POLICY ")
+	_, _ = buf.WriteString(s.Name)
+	_, _ = buf.WriteString(" ON ")
+	_, _ = buf.WriteString(s.Database)
+	return buf.String()
+}
+
+// RequiredPrivileges returns the privilege required to execute a DropRetentionPolicyStatement.
+func (s *DropRetentionPolicyStatement) RequiredPrivileges() ExecutionPrivileges {
+	return ExecutionPrivileges{{Name: s.Database, Privilege: WritePrivilege}}
+}
+
+// CreateUserStatement represents a command for creating a new user.
+type CreateUserStatement struct {
+	// Name of the user to be created.
+	Name string
+
+	// User's password
+	Password string
+
+	// User's privilege level.
+	Privilege *Privilege
+}
+
+// String returns a string representation of the create user statement.
+func (s *CreateUserStatement) String() string {
+	var buf bytes.Buffer
+	_, _ = buf.WriteString("CREATE USER ")
+	_, _ = buf.WriteString(s.Name)
+	_, _ = buf.WriteString(" WITH PASSWORD ")
+	_, _ = buf.WriteString(s.Password)
+
+	if s.Privilege != nil {
+		_, _ = buf.WriteString(" WITH ")
+		_, _ = buf.WriteString(s.Privilege.String())
+	}
+
+	return buf.String()
+}
+
+// RequiredPrivileges returns the privilege(s) required to execute a CreateUserStatement.
+func (s *CreateUserStatement) RequiredPrivileges() ExecutionPrivileges {
+	return ExecutionPrivileges{{Name: "", Privilege: AllPrivileges}}
+}
+
+// DropUserStatement represents a command for dropping a user.
+type DropUserStatement struct {
+	// Name of the user to drop.
+	Name string
+}
+
+// String returns a string representation of the drop user statement.
+func (s *DropUserStatement) String() string {
+	var buf bytes.Buffer
+	_, _ = buf.WriteString("DROP USER ")
+	_, _ = buf.WriteString(s.Name)
+	return buf.String()
+}
+
+// RequiredPrivileges returns the privilege(s) required to execute a DropUserStatement.
+func (s *DropUserStatement) RequiredPrivileges() ExecutionPrivileges {
+	return ExecutionPrivileges{{Name: "", Privilege: AllPrivileges}}
+}
+
+// Privilege is a type of action a user can be granted the right to use.
+type Privilege int
+
+const (
+	// NoPrivileges means no privileges required / granted / revoked.
+	NoPrivileges Privilege = iota
+	// ReadPrivilege means read privilege required / granted / revoked.
+	ReadPrivilege
+	// WritePrivilege means write privilege required / granted / revoked.
+	WritePrivilege
+	// AllPrivileges means all privileges required / granted / revoked.
+	AllPrivileges
+)
+
+// NewPrivilege returns an initialized *Privilege.
+func NewPrivilege(p Privilege) *Privilege { return &p }
+
+// String returns a string representation of a Privilege.
+func (p Privilege) String() string {
+	switch p {
+	case NoPrivileges:
+		return "NO PRIVILEGES"
+	case ReadPrivilege:
+		return "READ"
+	case WritePrivilege:
+		return "WRITE"
+	case AllPrivileges:
+		return "ALL PRIVILEGES"
+	}
+	return ""
+}
+
+// GrantStatement represents a command for granting a privilege.
+type GrantStatement struct {
+	// The privilege to be granted.
+	Privilege Privilege
+
+	// Thing to grant privilege on (e.g., a DB).
+	On string
+
+	// Who to grant the privilege to.
+	User string
+}
+
+// String returns a string representation of the grant statement.
+func (s *GrantStatement) String() string {
+	var buf bytes.Buffer
+	_, _ = buf.WriteString("GRANT ")
+	_, _ = buf.WriteString(s.Privilege.String())
+	if s.On != "" {
+		_, _ = buf.WriteString(" ON ")
+		_, _ = buf.WriteString(s.On)
+	}
+	_, _ = buf.WriteString(" TO ")
+	_, _ = buf.WriteString(s.User)
+	return buf.String()
+}
+
+// RequiredPrivileges returns the privilege required to execute a GrantStatement.
+func (s *GrantStatement) RequiredPrivileges() ExecutionPrivileges {
+	return ExecutionPrivileges{{Name: "", Privilege: AllPrivileges}}
+}
+
+// RevokeStatement represents a command to revoke a privilege from a user.
+type RevokeStatement struct {
+	// Privilege to be revoked.
+	Privilege Privilege
+
+	// Thing to revoke privilege to (e.g., a DB)
+	On string
+
+	// Who to revoke privilege from.
+	User string
+}
+
+// String returns a string representation of the revoke statement.
+func (s *RevokeStatement) String() string {
+	var buf bytes.Buffer
+	_, _ = buf.WriteString("REVOKE ")
+	_, _ = buf.WriteString(s.Privilege.String())
+	if s.On != "" {
+		_, _ = buf.WriteString(" ON ")
+		_, _ = buf.WriteString(s.On)
+	}
+	_, _ = buf.WriteString(" FROM ")
+	_, _ = buf.WriteString(s.User)
+	return buf.String()
+}
+
+// RequiredPrivileges returns the privilege required to execute a RevokeStatement.
+func (s *RevokeStatement) RequiredPrivileges() ExecutionPrivileges {
+	return ExecutionPrivileges{{Name: "", Privilege: AllPrivileges}}
+}
+
+// CreateRetentionPolicyStatement represents a command to create a retention policy.
+type CreateRetentionPolicyStatement struct {
+	// Name of policy to create.
+	Name string
+
+	// Name of database this policy belongs to.
+	Database string
+
+	// Duration data written to this policy will be retained.
+	Duration time.Duration
+
+	// Replication factor for data written to this policy.
+	Replication int
+
+	// Should this policy be set as default for the database?
+	Default bool
+}
+
+// String returns a string representation of the create retention policy.
+func (s *CreateRetentionPolicyStatement) String() string {
+	var buf bytes.Buffer
+	_, _ = buf.WriteString("CREATE RETENTION POLICY ")
+	_, _ = buf.WriteString(s.Name)
+	_, _ = buf.WriteString(" ON ")
+	_, _ = buf.WriteString(s.Database)
+	_, _ = buf.WriteString(" DURATION ")
+	_, _ = buf.WriteString(FormatDuration(s.Duration))
+	_, _ = buf.WriteString(" REPLICATION ")
+	_, _ = buf.WriteString(strconv.Itoa(s.Replication))
+	if s.Default {
+		_, _ = buf.WriteString(" DEFAULT")
+	}
+	return buf.String()
+}
+
+// RequiredPrivileges returns the privilege required to execute a CreateRetentionPolicyStatement.
+func (s *CreateRetentionPolicyStatement) RequiredPrivileges() ExecutionPrivileges {
+	return ExecutionPrivileges{{Name: "", Privilege: AllPrivileges}}
+}
+
+// AlterRetentionPolicyStatement represents a command to alter an existing retention policy.
+type AlterRetentionPolicyStatement struct {
+	// Name of policy to alter.
+	Name string
+
+	// Name of the database this policy belongs to.
+	Database string
+
+	// Duration data written to this policy will be retained.
+	Duration *time.Duration
+
+	// Replication factor for data written to this policy.
+	Replication *int
+
+	// Should this policy be set as defalut for the database?
+	Default bool
+}
+
+// String returns a string representation of the alter retention policy statement.
+func (s *AlterRetentionPolicyStatement) String() string {
+	var buf bytes.Buffer
+	_, _ = buf.WriteString("ALTER RETENTION POLICY ")
+	_, _ = buf.WriteString(s.Name)
+	_, _ = buf.WriteString(" ON ")
+	_, _ = buf.WriteString(s.Database)
+
+	if s.Duration != nil {
+		_, _ = buf.WriteString(" DURATION ")
+		_, _ = buf.WriteString(FormatDuration(*s.Duration))
+	}
+
+	if s.Replication != nil {
+		_, _ = buf.WriteString(" REPLICATION ")
+		_, _ = buf.WriteString(strconv.Itoa(*s.Replication))
+	}
+
+	if s.Default {
+		_, _ = buf.WriteString(" DEFAULT")
+	}
+
+	return buf.String()
+}
+
+// RequiredPrivileges returns the privilege required to execute an AlterRetentionPolicyStatement.
+func (s *AlterRetentionPolicyStatement) RequiredPrivileges() ExecutionPrivileges {
+	return ExecutionPrivileges{{Name: "", Privilege: AllPrivileges}}
+}
+
 // SelectStatement represents a command for extracting data from the database.
 type SelectStatement struct {
 	// Expressions returned from the selection.
 	Fields Fields
+
+	// Target (destination) for the result of the select.
+	Target *Target
 
 	// Expressions used for grouping the selection.
 	Dimensions Dimensions
@@ -197,6 +545,60 @@ type SelectStatement struct {
 	// Maximum number of rows to be returned.
 	// Unlimited if zero.
 	Limit int
+
+	// Returns rows starting at an offset from the first row.
+	Offset int
+}
+
+// Clone returns a deep copy of the statement.
+func (s *SelectStatement) Clone() *SelectStatement {
+	other := &SelectStatement{
+		Fields:     make(Fields, len(s.Fields)),
+		Dimensions: make(Dimensions, len(s.Dimensions)),
+		Source:     cloneSource(s.Source),
+		SortFields: make(SortFields, len(s.SortFields)),
+		Condition:  CloneExpr(s.Condition),
+		Limit:      s.Limit,
+	}
+	if s.Target != nil {
+		other.Target = &Target{Measurement: s.Target.Measurement, Database: s.Target.Database}
+	}
+	for i, f := range s.Fields {
+		other.Fields[i] = &Field{Expr: CloneExpr(f.Expr), Alias: f.Alias}
+	}
+	for i, d := range s.Dimensions {
+		other.Dimensions[i] = &Dimension{Expr: CloneExpr(d.Expr)}
+	}
+	// TODO: Copy sources.
+	for i, f := range s.SortFields {
+		other.SortFields[i] = &SortField{Name: f.Name, Ascending: f.Ascending}
+	}
+	return other
+}
+
+func cloneSource(s Source) Source {
+	if s == nil {
+		return nil
+	}
+
+	switch s := s.(type) {
+	case *Measurement:
+		return &Measurement{Name: s.Name}
+	case *Join:
+		other := &Join{Measurements: make(Measurements, len(s.Measurements))}
+		for i, m := range s.Measurements {
+			other.Measurements[i] = &Measurement{Name: m.Name}
+		}
+		return other
+	case *Merge:
+		other := &Merge{Measurements: make(Measurements, len(s.Measurements))}
+		for i, m := range s.Measurements {
+			other.Measurements[i] = &Measurement{Name: m.Name}
+		}
+		return other
+	default:
+		panic("unreachable")
+	}
 }
 
 // String returns a string representation of the select statement.
@@ -204,6 +606,11 @@ func (s *SelectStatement) String() string {
 	var buf bytes.Buffer
 	_, _ = buf.WriteString("SELECT ")
 	_, _ = buf.WriteString(s.Fields.String())
+
+	if s.Target != nil {
+		_, _ = buf.WriteString(" ")
+		_, _ = buf.WriteString(s.Target.String())
+	}
 	_, _ = buf.WriteString(" FROM ")
 	_, _ = buf.WriteString(s.Source.String())
 	if s.Condition != nil {
@@ -221,7 +628,22 @@ func (s *SelectStatement) String() string {
 	if s.Limit > 0 {
 		_, _ = fmt.Fprintf(&buf, " LIMIT %d", s.Limit)
 	}
+	if s.Offset > 0 {
+		_, _ = buf.WriteString(" OFFSET ")
+		_, _ = buf.WriteString(strconv.Itoa(s.Offset))
+	}
 	return buf.String()
+}
+
+// RequiredPrivileges returns the privilege required to execute the SelectStatement.
+func (s *SelectStatement) RequiredPrivileges() ExecutionPrivileges {
+	ep := ExecutionPrivileges{{Name: "", Privilege: ReadPrivilege}}
+
+	if s.Target != nil {
+		p := ExecutionPrivilege{Name: s.Target.Database, Privilege: WritePrivilege}
+		ep = append(ep, p)
+	}
+	return ep
 }
 
 // Aggregated returns true if the statement uses aggregate functions.
@@ -299,7 +721,7 @@ func (s *SelectStatement) Substatement(ref *VarRef) (*SelectStatement, error) {
 	return other, nil
 }
 
-// filters an expression to exclude expressions related to a source.
+// filters an expression to exclude expressions unrelated to a source.
 func filterExprBySource(name string, expr Expr) Expr {
 	switch expr := expr.(type) {
 	case *VarRef:
@@ -326,11 +748,14 @@ func filterExprBySource(name string, expr Expr) Expr {
 				return nil
 			}
 		}
+		return &BinaryExpr{Op: expr.Op, LHS: lhs, RHS: rhs}
 
 	case *ParenExpr:
-		if filterExprBySource(name, expr.Expr) == nil {
+		exp := filterExprBySource(name, expr.Expr)
+		if exp == nil {
 			return nil
 		}
+		return &ParenExpr{Expr: exp}
 	}
 	return expr
 }
@@ -359,6 +784,29 @@ func MatchSource(src Source, name string) string {
 	return ""
 }
 
+// Target represents a target (destination) policy, measurment, and DB.
+type Target struct {
+	// Measurement to write into.
+	Measurement string
+
+	// Database to write into.
+	Database string
+}
+
+// String returns a string representation of the Target.
+func (t *Target) String() string {
+	var buf bytes.Buffer
+	_, _ = buf.WriteString("INTO ")
+	_, _ = buf.WriteString(t.Measurement)
+
+	if t.Database != "" {
+		_, _ = buf.WriteString(" ON ")
+		_, _ = buf.WriteString(t.Database)
+	}
+
+	return buf.String()
+}
+
 // DeleteStatement represents a command for removing data from the database.
 type DeleteStatement struct {
 	// Data source that values are removed from.
@@ -380,8 +828,16 @@ func (s *DeleteStatement) String() string {
 	return s.String()
 }
 
-// ListSeriesStatement represents a command for listing series in the database.
-type ListSeriesStatement struct {
+// RequiredPrivileges returns the privilege required to execute a DeleteStatement.
+func (s *DeleteStatement) RequiredPrivileges() ExecutionPrivileges {
+	return ExecutionPrivileges{{Name: "", Privilege: WritePrivilege}}
+}
+
+// ShowSeriesStatement represents a command for listing series in the database.
+type ShowSeriesStatement struct {
+	// Measurement(s) the series are listed for.
+	Source Source
+
 	// An expression evaluated on a series name or tag.
 	Condition Expr
 
@@ -391,12 +847,15 @@ type ListSeriesStatement struct {
 	// Maximum number of rows to be returned.
 	// Unlimited if zero.
 	Limit int
+
+	// Returns rows starting at an offset from the first row.
+	Offset int
 }
 
 // String returns a string representation of the list series statement.
-func (s *ListSeriesStatement) String() string {
+func (s *ShowSeriesStatement) String() string {
 	var buf bytes.Buffer
-	_, _ = buf.WriteString("LIST SERIES")
+	_, _ = buf.WriteString("SHOW SERIES")
 
 	if s.Condition != nil {
 		_, _ = buf.WriteString(" WHERE ")
@@ -410,7 +869,16 @@ func (s *ListSeriesStatement) String() string {
 		_, _ = buf.WriteString(" LIMIT ")
 		_, _ = buf.WriteString(strconv.Itoa(s.Limit))
 	}
+	if s.Offset > 0 {
+		_, _ = buf.WriteString(" OFFSET ")
+		_, _ = buf.WriteString(strconv.Itoa(s.Offset))
+	}
 	return buf.String()
+}
+
+// RequiredPrivileges returns the privilege required to execute a ShowSeriesStatement.
+func (s *ShowSeriesStatement) RequiredPrivileges() ExecutionPrivileges {
+	return ExecutionPrivileges{{Name: "", Privilege: ReadPrivilege}}
 }
 
 // DropSeriesStatement represents a command for removing a series from the database.
@@ -421,25 +889,71 @@ type DropSeriesStatement struct {
 // String returns a string representation of the drop series statement.
 func (s *DropSeriesStatement) String() string { return fmt.Sprintf("DROP SERIES %s", s.Name) }
 
-// ListContinuousQueriesStatement represents a command for listing continuous queries.
-type ListContinuousQueriesStatement struct{}
+// RequiredPrivileges returns the privilige reqired to execute a DropSeriesStatement.
+func (s DropSeriesStatement) RequiredPrivileges() ExecutionPrivileges {
+	return ExecutionPrivileges{{Name: "", Privilege: WritePrivilege}}
+}
+
+// ShowContinuousQueriesStatement represents a command for listing continuous queries.
+type ShowContinuousQueriesStatement struct{}
 
 // String returns a string representation of the list continuous queries statement.
-func (s *ListContinuousQueriesStatement) String() string { return "LIST CONTINUOUS QUERIES" }
+func (s *ShowContinuousQueriesStatement) String() string { return "SHOW CONTINUOUS QUERIES" }
 
-// CreateContinuousQueriesStatement represents a command for creating a continuous query.
+// RequiredPrivileges returns the privilege required to execute a ShowContinuousQueriesStatement.
+func (s *ShowContinuousQueriesStatement) RequiredPrivileges() ExecutionPrivileges {
+	return ExecutionPrivileges{{Name: "", Privilege: ReadPrivilege}}
+}
+
+// ShowDatabasesStatement represents a command for listing all databases in the cluster.
+type ShowDatabasesStatement struct{}
+
+// String returns a string representation of the list databases command.
+func (s *ShowDatabasesStatement) String() string { return "SHOW DATABASES" }
+
+// RequiredPrivileges returns the privilege required to execute a ShowDatabasesStatement
+func (s *ShowDatabasesStatement) RequiredPrivileges() ExecutionPrivileges {
+	return ExecutionPrivileges{{Name: "", Privilege: AllPrivileges}}
+}
+
+// CreateContinuousQueryStatement represents a command for creating a continuous query.
 type CreateContinuousQueryStatement struct {
-	Name   string
+	// Name of the continuous query to be created.
+	Name string
+
+	// Name of the database to create the continuous query on.
+	Database string
+
+	// Source of data (SELECT statement).
 	Source *SelectStatement
-	Target string
 }
 
 // String returns a string representation of the statement.
 func (s *CreateContinuousQueryStatement) String() string {
-	return fmt.Sprintf("CREATE CONTINUOUS QUERY %s AS %s INTO %s", s.Name, s.Source.String(), s.Target)
+	return fmt.Sprintf("CREATE CONTINUOUS QUERY %s ON %s BEGIN %s END", s.Name, s.Database, s.Source.String())
 }
 
-// DropContinuousQueriesStatement represents a command for removing a continuous query.
+// RequiredPrivileges returns the privilege required to execute a CreateContinuousQueryStatement.
+func (s *CreateContinuousQueryStatement) RequiredPrivileges() ExecutionPrivileges {
+	ep := ExecutionPrivileges{{Name: s.Database, Privilege: ReadPrivilege}}
+
+	// Selecting into a database that's different from the source?
+	if s.Source.Target.Database != "" {
+		// Change source database privilege requirement to read.
+		ep[0].Privilege = ReadPrivilege
+
+		// Add destination database privilege requirement and set it to write.
+		p := ExecutionPrivilege{
+			Name:      s.Source.Target.Database,
+			Privilege: WritePrivilege,
+		}
+		ep = append(ep, p)
+	}
+
+	return ep
+}
+
+// DropContinuousQueryStatement represents a command for removing a continuous query.
 type DropContinuousQueryStatement struct {
 	Name string
 }
@@ -449,8 +963,13 @@ func (s *DropContinuousQueryStatement) String() string {
 	return fmt.Sprintf("DROP CONTINUOUS QUERY %s", s.Name)
 }
 
-// ListMeasurementsStatement represents a command for listing measurements.
-type ListMeasurementsStatement struct {
+// RequiredPrivileges returns the privilege(s) required to execute a DropContinuousQueryStatement
+func (s *DropContinuousQueryStatement) RequiredPrivileges() ExecutionPrivileges {
+	return ExecutionPrivileges{{Name: "", Privilege: WritePrivilege}}
+}
+
+// ShowMeasurementsStatement represents a command for listing measurements.
+type ShowMeasurementsStatement struct {
 	// An expression evaluated on data point.
 	Condition Expr
 
@@ -460,12 +979,15 @@ type ListMeasurementsStatement struct {
 	// Maximum number of rows to be returned.
 	// Unlimited if zero.
 	Limit int
+
+	// Returns rows starting at an offset from the first row.
+	Offset int
 }
 
 // String returns a string representation of the statement.
-func (s *ListMeasurementsStatement) String() string {
+func (s *ShowMeasurementsStatement) String() string {
 	var buf bytes.Buffer
-	_, _ = buf.WriteString("LIST MEASUREMENTS")
+	_, _ = buf.WriteString("SHOW MEASUREMENTS")
 
 	if s.Condition != nil {
 		_, _ = buf.WriteString(" WHERE ")
@@ -479,11 +1001,39 @@ func (s *ListMeasurementsStatement) String() string {
 		_, _ = buf.WriteString(" LIMIT ")
 		_, _ = buf.WriteString(strconv.Itoa(s.Limit))
 	}
+	if s.Offset > 0 {
+		_, _ = buf.WriteString(" OFFSET ")
+		_, _ = buf.WriteString(strconv.Itoa(s.Offset))
+	}
 	return buf.String()
 }
 
-// ListTagKeysStatement represents a command for listing tag keys.
-type ListTagKeysStatement struct {
+// RequiredPrivileges returns the privilege(s) required to execute a ShowMeasurementsStatement
+func (s *ShowMeasurementsStatement) RequiredPrivileges() ExecutionPrivileges {
+	return ExecutionPrivileges{{Name: "", Privilege: ReadPrivilege}}
+}
+
+// ShowRetentionPoliciesStatement represents a command for listing retention policies.
+type ShowRetentionPoliciesStatement struct {
+	// Name of the database to list policies for.
+	Database string
+}
+
+// String returns a string representation of a ShowRetentionPoliciesStatement.
+func (s *ShowRetentionPoliciesStatement) String() string {
+	var buf bytes.Buffer
+	_, _ = buf.WriteString("SHOW RETENTION POLICIES ")
+	_, _ = buf.WriteString(s.Database)
+	return buf.String()
+}
+
+// RequiredPrivileges returns the privilege(s) required to execute a ShowRetentionPoliciesStatement
+func (s *ShowRetentionPoliciesStatement) RequiredPrivileges() ExecutionPrivileges {
+	return ExecutionPrivileges{{Name: "", Privilege: ReadPrivilege}}
+}
+
+// ShowTagKeysStatement represents a command for listing tag keys.
+type ShowTagKeysStatement struct {
 	// Data source that fields are extracted from.
 	Source Source
 
@@ -496,12 +1046,15 @@ type ListTagKeysStatement struct {
 	// Maximum number of rows to be returned.
 	// Unlimited if zero.
 	Limit int
+
+	// Returns rows starting at an offset from the first row.
+	Offset int
 }
 
 // String returns a string representation of the statement.
-func (s *ListTagKeysStatement) String() string {
+func (s *ShowTagKeysStatement) String() string {
 	var buf bytes.Buffer
-	_, _ = buf.WriteString("LIST TAG KEYS")
+	_, _ = buf.WriteString("SHOW TAG KEYS")
 
 	if s.Source != nil {
 		_, _ = buf.WriteString(" FROM ")
@@ -519,13 +1072,25 @@ func (s *ListTagKeysStatement) String() string {
 		_, _ = buf.WriteString(" LIMIT ")
 		_, _ = buf.WriteString(strconv.Itoa(s.Limit))
 	}
+	if s.Offset > 0 {
+		_, _ = buf.WriteString(" OFFSET ")
+		_, _ = buf.WriteString(strconv.Itoa(s.Offset))
+	}
 	return buf.String()
 }
 
-// ListTagValuesStatement represents a command for listing tag values.
-type ListTagValuesStatement struct {
+// RequiredPrivileges returns the privilege(s) required to execute a ShowTagKeysStatement
+func (s *ShowTagKeysStatement) RequiredPrivileges() ExecutionPrivileges {
+	return ExecutionPrivileges{{Name: "", Privilege: ReadPrivilege}}
+}
+
+// ShowTagValuesStatement represents a command for listing tag values.
+type ShowTagValuesStatement struct {
 	// Data source that fields are extracted from.
 	Source Source
+
+	// Tag key(s) to pull values from.
+	TagKeys []string
 
 	// An expression evaluated on data point.
 	Condition Expr
@@ -536,12 +1101,15 @@ type ListTagValuesStatement struct {
 	// Maximum number of rows to be returned.
 	// Unlimited if zero.
 	Limit int
+
+	// Returns rows starting at an offset from the first row.
+	Offset int
 }
 
 // String returns a string representation of the statement.
-func (s *ListTagValuesStatement) String() string {
+func (s *ShowTagValuesStatement) String() string {
 	var buf bytes.Buffer
-	_, _ = buf.WriteString("LIST TAG VALUES")
+	_, _ = buf.WriteString("SHOW TAG VALUES")
 
 	if s.Source != nil {
 		_, _ = buf.WriteString(" FROM ")
@@ -559,11 +1127,33 @@ func (s *ListTagValuesStatement) String() string {
 		_, _ = buf.WriteString(" LIMIT ")
 		_, _ = buf.WriteString(strconv.Itoa(s.Limit))
 	}
+	if s.Offset > 0 {
+		_, _ = buf.WriteString(" OFFSET ")
+		_, _ = buf.WriteString(strconv.Itoa(s.Offset))
+	}
 	return buf.String()
 }
 
-// ListFieldKeyStatement represents a command for listing field keys.
-type ListFieldKeysStatement struct {
+// RequiredPrivileges returns the privilege(s) required to execute a ShowTagValuesStatement
+func (s *ShowTagValuesStatement) RequiredPrivileges() ExecutionPrivileges {
+	return ExecutionPrivileges{{Name: "", Privilege: ReadPrivilege}}
+}
+
+// ShowUsersStatement represents a command for listing users.
+type ShowUsersStatement struct{}
+
+// String retuns a string representation of the ShowUsersStatement.
+func (s *ShowUsersStatement) String() string {
+	return "SHOW USERS"
+}
+
+// RequiredPrivileges returns the privilege(s) required to execute a ShowUsersStatement
+func (s *ShowUsersStatement) RequiredPrivileges() ExecutionPrivileges {
+	return ExecutionPrivileges{{Name: "", Privilege: AllPrivileges}}
+}
+
+// ShowFieldKeysStatement represents a command for listing field keys.
+type ShowFieldKeysStatement struct {
 	// Data source that fields are extracted from.
 	Source Source
 
@@ -576,12 +1166,15 @@ type ListFieldKeysStatement struct {
 	// Maximum number of rows to be returned.
 	// Unlimited if zero.
 	Limit int
+
+	// Returns rows starting at an offset from the first row.
+	Offset int
 }
 
 // String returns a string representation of the statement.
-func (s *ListFieldKeysStatement) String() string {
+func (s *ShowFieldKeysStatement) String() string {
 	var buf bytes.Buffer
-	_, _ = buf.WriteString("LIST FIELD KEYS")
+	_, _ = buf.WriteString("SHOW FIELD KEYS")
 
 	if s.Source != nil {
 		_, _ = buf.WriteString(" FROM ")
@@ -599,11 +1192,20 @@ func (s *ListFieldKeysStatement) String() string {
 		_, _ = buf.WriteString(" LIMIT ")
 		_, _ = buf.WriteString(strconv.Itoa(s.Limit))
 	}
+	if s.Offset > 0 {
+		_, _ = buf.WriteString(" OFFSET ")
+		_, _ = buf.WriteString(strconv.Itoa(s.Offset))
+	}
 	return buf.String()
 }
 
-// ListFieldValuesStatement represents a command for listing field values.
-type ListFieldValuesStatement struct {
+// RequiredPrivileges returns the privilege(s) required to execute a ShowFieldKeysStatement
+func (s *ShowFieldKeysStatement) RequiredPrivileges() ExecutionPrivileges {
+	return ExecutionPrivileges{{Name: "", Privilege: ReadPrivilege}}
+}
+
+// ShowFieldValuesStatement represents a command for listing field values.
+type ShowFieldValuesStatement struct {
 	// Data source that fields are extracted from.
 	Source Source
 
@@ -616,12 +1218,15 @@ type ListFieldValuesStatement struct {
 	// Maximum number of rows to be returned.
 	// Unlimited if zero.
 	Limit int
+
+	// Returns rows starting at an offset from the first row.
+	Offset int
 }
 
 // String returns a string representation of the statement.
-func (s *ListFieldValuesStatement) String() string {
+func (s *ShowFieldValuesStatement) String() string {
 	var buf bytes.Buffer
-	_, _ = buf.WriteString("LIST FIELD VALUES")
+	_, _ = buf.WriteString("SHOW FIELD VALUES")
 
 	if s.Source != nil {
 		_, _ = buf.WriteString(" FROM ")
@@ -639,7 +1244,16 @@ func (s *ListFieldValuesStatement) String() string {
 		_, _ = buf.WriteString(" LIMIT ")
 		_, _ = buf.WriteString(strconv.Itoa(s.Limit))
 	}
+	if s.Offset > 0 {
+		_, _ = buf.WriteString(" OFFSET ")
+		_, _ = buf.WriteString(strconv.Itoa(s.Offset))
+	}
 	return buf.String()
+}
+
+// RequiredPrivileges returns the privilege(s) required to execute a ShowFieldValuesStatement
+func (s *ShowFieldValuesStatement) RequiredPrivileges() ExecutionPrivileges {
+	return ExecutionPrivileges{{Name: "", Privilege: ReadPrivilege}}
 }
 
 // Fields represents a list of fields.
@@ -685,7 +1299,7 @@ func (f *Field) String() string {
 	if f.Alias == "" {
 		return f.Expr.String()
 	}
-	return fmt.Sprintf("%s AS %s", f.Expr.String(), QuoteIdent(f.Alias))
+	return fmt.Sprintf("%s AS %s", f.Expr.String(), f.Alias)
 }
 
 // Dimensions represents a list of dimensions.
@@ -698,6 +1312,41 @@ func (a Dimensions) String() string {
 		str = append(str, d.String())
 	}
 	return strings.Join(str, ", ")
+}
+
+// Normalize returns the interval and tag dimensions separately.
+// Returns 0 if no time interval is specified.
+// Returns an error if multiple time dimensions exist or if non-VarRef dimensions are specified.
+func (a Dimensions) Normalize() (time.Duration, []string, error) {
+	var dur time.Duration
+	var tags []string
+
+	for _, dim := range a {
+		switch expr := dim.Expr.(type) {
+		case *Call:
+			// Ensure the call is time() and it only has one duration argument.
+			// If we already have a duration
+			if strings.ToLower(expr.Name) != "time" {
+				return 0, nil, errors.New("only time() calls allowed in dimensions")
+			} else if len(expr.Args) != 1 {
+				return 0, nil, errors.New("time dimension expected one argument")
+			} else if lit, ok := expr.Args[0].(*DurationLiteral); !ok {
+				return 0, nil, errors.New("time dimension must have one duration argument")
+			} else if dur != 0 {
+				return 0, nil, errors.New("multiple time dimensions not allowed")
+			} else {
+				dur = lit.Val
+			}
+
+		case *VarRef:
+			tags = append(tags, expr.Val)
+
+		default:
+			return 0, nil, errors.New("only time and tag dimensions allowed")
+		}
+	}
+
+	return dur, tags, nil
 }
 
 // Dimension represents an expression that a select statement is grouped by.
@@ -726,7 +1375,7 @@ type Measurement struct {
 }
 
 // String returns a string representation of the measurement.
-func (m *Measurement) String() string { return QuoteIdent(m.Name) }
+func (m *Measurement) String() string { return m.Name }
 
 // Join represents two datasources joined together.
 type Join struct {
@@ -754,7 +1403,7 @@ type VarRef struct {
 }
 
 // String returns a string representation of the variable reference.
-func (r *VarRef) String() string { return QuoteIdent(r.Val) }
+func (r *VarRef) String() string { return r.Val }
 
 // Call represents a function call.
 type Call struct {
@@ -795,13 +1444,29 @@ func (l *BooleanLiteral) String() string {
 	return "false"
 }
 
+// isTrueLiteral returns true if the expression is a literal "true" value.
+func isTrueLiteral(expr Expr) bool {
+	if expr, ok := expr.(*BooleanLiteral); ok {
+		return expr.Val == true
+	}
+	return false
+}
+
+// isFalseLiteral returns true if the expression is a literal "false" value.
+func isFalseLiteral(expr Expr) bool {
+	if expr, ok := expr.(*BooleanLiteral); ok {
+		return expr.Val == false
+	}
+	return false
+}
+
 // StringLiteral represents a string literal.
 type StringLiteral struct {
 	Val string
 }
 
 // String returns a string representation of the literal.
-func (l *StringLiteral) String() string { return Quote(l.Val) }
+func (l *StringLiteral) String() string { return QuoteString(l.Val) }
 
 // TimeLiteral represents a point-in-time literal.
 type TimeLiteral struct {
@@ -820,6 +1485,13 @@ type DurationLiteral struct {
 
 // String returns a string representation of the literal.
 func (l *DurationLiteral) String() string { return FormatDuration(l.Val) }
+
+// nilLiteral represents a nil literal.
+// This is not available to the query language itself. It's only used internally.
+type nilLiteral struct{}
+
+// String returns a string representation of the literal.
+func (l *nilLiteral) String() string { return `nil` }
 
 // BinaryExpr represents an operation between two expressions.
 type BinaryExpr struct {
@@ -847,219 +1519,38 @@ type Wildcard struct{}
 // String returns a string representation of the wildcard.
 func (e *Wildcard) String() string { return "*" }
 
-// Fold performs constant folding on an expression.
-// The function, "now()", is expanded into the current time during folding.
-func Fold(expr Expr, now *time.Time) Expr {
+// CloneExpr returns a deep copy of the expression.
+func CloneExpr(expr Expr) Expr {
+	if expr == nil {
+		return nil
+	}
 	switch expr := expr.(type) {
-	case *Call:
-		// Replace "now()" with current time.
-		if strings.ToLower(expr.Name) == "now" && now != nil {
-			return &TimeLiteral{Val: *now}
-		}
-
-		// Fold call arguments.
-		for i, arg := range expr.Args {
-			expr.Args[i] = Fold(arg, now)
-		}
-		return expr
-
 	case *BinaryExpr:
-		// Fold and evaluate binary expression.
-		return foldBinaryExpr(expr, now)
-
-	case *ParenExpr:
-		// Fold inside expression.
-		// Return inside expression if not a binary expression.
-		expr.Expr = Fold(expr.Expr, now)
-		if _, ok := expr.Expr.(*BinaryExpr); !ok {
-			return expr.Expr
-		}
-		return expr
-
-	default:
-		return expr
-	}
-}
-
-// foldBinaryExpr performs constant folding if the binary expression has two literals.
-func foldBinaryExpr(expr *BinaryExpr, now *time.Time) Expr {
-	// Fold both sides of binary expression first.
-	expr.LHS = Fold(expr.LHS, now)
-	expr.RHS = Fold(expr.RHS, now)
-
-	// Evaluate operations if both sides are the same type.
-	switch lhs := expr.LHS.(type) {
-	case *NumberLiteral:
-		if _, ok := expr.RHS.(*NumberLiteral); ok {
-			return foldNumberLiterals(expr)
-		}
+		return &BinaryExpr{Op: expr.Op, LHS: CloneExpr(expr.LHS), RHS: CloneExpr(expr.RHS)}
 	case *BooleanLiteral:
-		if _, ok := expr.RHS.(*BooleanLiteral); ok {
-			return foldBooleanLiterals(expr)
+		return &BooleanLiteral{Val: expr.Val}
+	case *Call:
+		args := make([]Expr, len(expr.Args))
+		for i, arg := range expr.Args {
+			args[i] = CloneExpr(arg)
 		}
-	case *TimeLiteral:
-		switch expr.RHS.(type) {
-		case *TimeLiteral:
-			return foldTimeLiterals(expr)
-		case *DurationLiteral:
-			return foldTimeDurationLiterals(expr)
-		}
+		return &Call{Name: expr.Name, Args: args}
 	case *DurationLiteral:
-		switch rhs := expr.RHS.(type) {
-		case *DurationLiteral:
-			return foldDurationLiterals(expr)
-		case *NumberLiteral:
-			return foldDurationNumberLiterals(expr)
-		case *TimeLiteral:
-			if expr.Op == ADD {
-				return &TimeLiteral{Val: rhs.Val.Add(lhs.Val)}
-			}
-		}
+		return &DurationLiteral{Val: expr.Val}
+	case *NumberLiteral:
+		return &NumberLiteral{Val: expr.Val}
+	case *ParenExpr:
+		return &ParenExpr{Expr: CloneExpr(expr.Expr)}
 	case *StringLiteral:
-		if rhs, ok := expr.RHS.(*StringLiteral); ok && expr.Op == ADD {
-			return &StringLiteral{Val: lhs.Val + rhs.Val}
-		}
+		return &StringLiteral{Val: expr.Val}
+	case *TimeLiteral:
+		return &TimeLiteral{Val: expr.Val}
+	case *VarRef:
+		return &VarRef{Val: expr.Val}
+	case *Wildcard:
+		return &Wildcard{}
 	}
-
-	return expr
-}
-
-// foldNumberLiterals performs constant folding on two number literals.
-func foldNumberLiterals(expr *BinaryExpr) Expr {
-	lhs := expr.LHS.(*NumberLiteral)
-	rhs := expr.RHS.(*NumberLiteral)
-
-	switch expr.Op {
-	case ADD:
-		return &NumberLiteral{Val: lhs.Val + rhs.Val}
-	case SUB:
-		return &NumberLiteral{Val: lhs.Val - rhs.Val}
-	case MUL:
-		return &NumberLiteral{Val: lhs.Val * rhs.Val}
-	case DIV:
-		if rhs.Val == 0 {
-			return &NumberLiteral{Val: 0}
-		}
-		return &NumberLiteral{Val: lhs.Val / rhs.Val}
-	case EQ:
-		return &BooleanLiteral{Val: lhs.Val == rhs.Val}
-	case NEQ:
-		return &BooleanLiteral{Val: lhs.Val != rhs.Val}
-	case GT:
-		return &BooleanLiteral{Val: lhs.Val > rhs.Val}
-	case GTE:
-		return &BooleanLiteral{Val: lhs.Val >= rhs.Val}
-	case LT:
-		return &BooleanLiteral{Val: lhs.Val < rhs.Val}
-	case LTE:
-		return &BooleanLiteral{Val: lhs.Val <= rhs.Val}
-	default:
-		return expr
-	}
-}
-
-// foldBooleanLiterals performs constant folding on two boolean literals.
-func foldBooleanLiterals(expr *BinaryExpr) Expr {
-	lhs := expr.LHS.(*BooleanLiteral)
-	rhs := expr.RHS.(*BooleanLiteral)
-
-	switch expr.Op {
-	case EQ:
-		return &BooleanLiteral{Val: lhs.Val == rhs.Val}
-	case NEQ:
-		return &BooleanLiteral{Val: lhs.Val != rhs.Val}
-	case AND:
-		return &BooleanLiteral{Val: lhs.Val && rhs.Val}
-	case OR:
-		return &BooleanLiteral{Val: lhs.Val || rhs.Val}
-	default:
-		return expr
-	}
-}
-
-// foldTimeLiterals performs constant folding on two time literals.
-func foldTimeLiterals(expr *BinaryExpr) Expr {
-	lhs := expr.LHS.(*TimeLiteral)
-	rhs := expr.RHS.(*TimeLiteral)
-
-	switch expr.Op {
-	case SUB:
-		return &DurationLiteral{Val: lhs.Val.Sub(rhs.Val)}
-	case EQ:
-		return &BooleanLiteral{Val: lhs.Val.Equal(rhs.Val)}
-	case NEQ:
-		return &BooleanLiteral{Val: !lhs.Val.Equal(rhs.Val)}
-	case GT:
-		return &BooleanLiteral{Val: lhs.Val.After(rhs.Val)}
-	case GTE:
-		return &BooleanLiteral{Val: lhs.Val.After(rhs.Val) || lhs.Val.Equal(rhs.Val)}
-	case LT:
-		return &BooleanLiteral{Val: lhs.Val.Before(rhs.Val)}
-	case LTE:
-		return &BooleanLiteral{Val: lhs.Val.Before(rhs.Val) || lhs.Val.Equal(rhs.Val)}
-	default:
-		return expr
-	}
-}
-
-// foldTimeDurationLiterals performs constant folding on a time and duration literal.
-func foldTimeDurationLiterals(expr *BinaryExpr) Expr {
-	lhs := expr.LHS.(*TimeLiteral)
-	rhs := expr.RHS.(*DurationLiteral)
-
-	switch expr.Op {
-	case ADD:
-		return &TimeLiteral{Val: lhs.Val.Add(rhs.Val)}
-	case SUB:
-		return &TimeLiteral{Val: lhs.Val.Add(-rhs.Val)}
-	default:
-		return expr
-	}
-}
-
-// foldDurationLiterals performs constant folding on two duration literals.
-func foldDurationLiterals(expr *BinaryExpr) Expr {
-	lhs := expr.LHS.(*DurationLiteral)
-	rhs := expr.RHS.(*DurationLiteral)
-
-	switch expr.Op {
-	case ADD:
-		return &DurationLiteral{Val: lhs.Val + rhs.Val}
-	case SUB:
-		return &DurationLiteral{Val: lhs.Val - rhs.Val}
-	case EQ:
-		return &BooleanLiteral{Val: lhs.Val == rhs.Val}
-	case NEQ:
-		return &BooleanLiteral{Val: lhs.Val != rhs.Val}
-	case GT:
-		return &BooleanLiteral{Val: lhs.Val > rhs.Val}
-	case GTE:
-		return &BooleanLiteral{Val: lhs.Val >= rhs.Val}
-	case LT:
-		return &BooleanLiteral{Val: lhs.Val < rhs.Val}
-	case LTE:
-		return &BooleanLiteral{Val: lhs.Val <= rhs.Val}
-	default:
-		return expr
-	}
-}
-
-// foldDurationNumberLiterals performs constant folding on duration and number literal.
-func foldDurationNumberLiterals(expr *BinaryExpr) Expr {
-	lhs := expr.LHS.(*DurationLiteral)
-	rhs := expr.RHS.(*NumberLiteral)
-
-	switch expr.Op {
-	case MUL:
-		return &DurationLiteral{Val: lhs.Val * time.Duration(rhs.Val)}
-	case DIV:
-		if rhs.Val == 0 {
-			return &DurationLiteral{Val: 0}
-		}
-		return &DurationLiteral{Val: lhs.Val / time.Duration(rhs.Val)}
-	default:
-		return expr
-	}
+	panic("unreachable")
 }
 
 // TimeRange returns the minimum and maximum times specified by an expression.
@@ -1157,6 +1648,20 @@ func Walk(v Visitor, node Node) {
 		Walk(v, n.Dimensions)
 		Walk(v, n.Source)
 		Walk(v, n.Condition)
+
+	case *ShowSeriesStatement:
+		Walk(v, n.Source)
+		Walk(v, n.Condition)
+
+	case *ShowTagKeysStatement:
+		Walk(v, n.Source)
+		Walk(v, n.Condition)
+		Walk(v, n.SortFields)
+
+	case *ShowTagValuesStatement:
+		Walk(v, n.Source)
+		Walk(v, n.Condition)
+		Walk(v, n.SortFields)
 
 	case Fields:
 		for _, c := range n {
@@ -1261,3 +1766,390 @@ func RewriteFunc(node Node, fn func(Node) Node) Node {
 type rewriterFunc func(Node) Node
 
 func (fn rewriterFunc) Rewrite(n Node) Node { return fn(n) }
+
+// Eval evaluates expr against a map.
+func Eval(expr Expr, m map[string]interface{}) interface{} {
+	if expr == nil {
+		return nil
+	}
+
+	switch expr := expr.(type) {
+	case *BinaryExpr:
+		return evalBinaryExpr(expr, m)
+	case *BooleanLiteral:
+		return expr.Val
+	case *NumberLiteral:
+		return expr.Val
+	case *ParenExpr:
+		return Eval(expr.Expr, m)
+	case *StringLiteral:
+		return expr.Val
+	case *VarRef:
+		return m[expr.Val]
+	default:
+		return nil
+	}
+}
+
+func evalBinaryExpr(expr *BinaryExpr, m map[string]interface{}) interface{} {
+	lhs := Eval(expr.LHS, m)
+	rhs := Eval(expr.RHS, m)
+
+	// Evaluate if both sides are simple types.
+	switch lhs := lhs.(type) {
+	case bool:
+		rhs, _ := rhs.(bool)
+		switch expr.Op {
+		case AND:
+			return lhs && rhs
+		case OR:
+			return lhs || rhs
+		}
+	case float64:
+		rhs, _ := rhs.(float64)
+		switch expr.Op {
+		case EQ:
+			return lhs == rhs
+		case NEQ:
+			return lhs != rhs
+		case LT:
+			return lhs < rhs
+		case LTE:
+			return lhs <= rhs
+		case GT:
+			return lhs > rhs
+		case GTE:
+			return lhs >= rhs
+		case ADD:
+			return lhs + rhs
+		case SUB:
+			return lhs - rhs
+		case MUL:
+			return lhs * rhs
+		case DIV:
+			if rhs == 0 {
+				return float64(0)
+			}
+			return lhs / rhs
+		}
+	case string:
+		rhs, _ := rhs.(string)
+		switch expr.Op {
+		case EQ:
+			return lhs == rhs
+		case NEQ:
+			return lhs != rhs
+		}
+	}
+	return nil
+}
+
+// Reduce evaluates expr using the available values in valuer.
+// References that don't exist in valuer are ignored.
+func Reduce(expr Expr, valuer Valuer) Expr {
+	expr = reduce(expr, valuer)
+
+	// Unwrap parens at top level.
+	if expr, ok := expr.(*ParenExpr); ok {
+		return expr.Expr
+	}
+	return expr
+}
+
+func reduce(expr Expr, valuer Valuer) Expr {
+	if expr == nil {
+		return nil
+	}
+
+	switch expr := expr.(type) {
+	case *BinaryExpr:
+		return reduceBinaryExpr(expr, valuer)
+	case *Call:
+		return reduceCall(expr, valuer)
+	case *ParenExpr:
+		return reduceParenExpr(expr, valuer)
+	case *VarRef:
+		return reduceVarRef(expr, valuer)
+	default:
+		return CloneExpr(expr)
+	}
+}
+
+func reduceBinaryExpr(expr *BinaryExpr, valuer Valuer) Expr {
+	// Reduce both sides first.
+	op := expr.Op
+	lhs := reduce(expr.LHS, valuer)
+	rhs := reduce(expr.RHS, valuer)
+
+	// Do not evaluate if one side is nil.
+	if lhs == nil || rhs == nil {
+		return &BinaryExpr{LHS: lhs, RHS: rhs, Op: expr.Op}
+	}
+
+	// If we have a logical operator (AND, OR) and one side is a boolean literal
+	// then we need to have special handling.
+	if op == AND {
+		if isFalseLiteral(lhs) || isFalseLiteral(rhs) {
+			return &BooleanLiteral{Val: false}
+		} else if isTrueLiteral(lhs) {
+			return rhs
+		} else if isTrueLiteral(rhs) {
+			return lhs
+		}
+	} else if op == OR {
+		if isTrueLiteral(lhs) || isTrueLiteral(rhs) {
+			return &BooleanLiteral{Val: true}
+		} else if isFalseLiteral(lhs) {
+			return rhs
+		} else if isFalseLiteral(rhs) {
+			return lhs
+		}
+	}
+
+	// Evaluate if both sides are simple types.
+	switch lhs := lhs.(type) {
+	case *BooleanLiteral:
+		return reduceBinaryExprBooleanLHS(op, lhs, rhs)
+	case *DurationLiteral:
+		return reduceBinaryExprDurationLHS(op, lhs, rhs)
+	case *nilLiteral:
+		return reduceBinaryExprNilLHS(op, lhs, rhs)
+	case *NumberLiteral:
+		return reduceBinaryExprNumberLHS(op, lhs, rhs)
+	case *StringLiteral:
+		return reduceBinaryExprStringLHS(op, lhs, rhs)
+	case *TimeLiteral:
+		return reduceBinaryExprTimeLHS(op, lhs, rhs)
+	default:
+		return &BinaryExpr{Op: op, LHS: lhs, RHS: rhs}
+	}
+}
+
+func reduceBinaryExprBooleanLHS(op Token, lhs *BooleanLiteral, rhs Expr) Expr {
+	switch rhs := rhs.(type) {
+	case *BooleanLiteral:
+		switch op {
+		case EQ:
+			return &BooleanLiteral{Val: lhs.Val == rhs.Val}
+		case NEQ:
+			return &BooleanLiteral{Val: lhs.Val != rhs.Val}
+		case AND:
+			return &BooleanLiteral{Val: lhs.Val && rhs.Val}
+		case OR:
+			return &BooleanLiteral{Val: lhs.Val || rhs.Val}
+		}
+	case *nilLiteral:
+		return &BooleanLiteral{Val: false}
+	}
+	return &BinaryExpr{Op: op, LHS: lhs, RHS: rhs}
+}
+
+func reduceBinaryExprDurationLHS(op Token, lhs *DurationLiteral, rhs Expr) Expr {
+	switch rhs := rhs.(type) {
+	case *DurationLiteral:
+		switch op {
+		case ADD:
+			return &DurationLiteral{Val: lhs.Val + rhs.Val}
+		case SUB:
+			return &DurationLiteral{Val: lhs.Val - rhs.Val}
+		case EQ:
+			return &BooleanLiteral{Val: lhs.Val == rhs.Val}
+		case NEQ:
+			return &BooleanLiteral{Val: lhs.Val != rhs.Val}
+		case GT:
+			return &BooleanLiteral{Val: lhs.Val > rhs.Val}
+		case GTE:
+			return &BooleanLiteral{Val: lhs.Val >= rhs.Val}
+		case LT:
+			return &BooleanLiteral{Val: lhs.Val < rhs.Val}
+		case LTE:
+			return &BooleanLiteral{Val: lhs.Val <= rhs.Val}
+		}
+	case *NumberLiteral:
+		switch op {
+		case MUL:
+			return &DurationLiteral{Val: lhs.Val * time.Duration(rhs.Val)}
+		case DIV:
+			if rhs.Val == 0 {
+				return &DurationLiteral{Val: 0}
+			}
+			return &DurationLiteral{Val: lhs.Val / time.Duration(rhs.Val)}
+		}
+	case *TimeLiteral:
+		switch op {
+		case ADD:
+			return &TimeLiteral{Val: rhs.Val.Add(lhs.Val)}
+		}
+	case *nilLiteral:
+		return &BooleanLiteral{Val: false}
+	}
+	return &BinaryExpr{Op: op, LHS: lhs, RHS: rhs}
+}
+
+func reduceBinaryExprNilLHS(op Token, lhs *nilLiteral, rhs Expr) Expr {
+	switch op {
+	case EQ, NEQ:
+		return &BooleanLiteral{Val: false}
+	}
+	return &BinaryExpr{Op: op, LHS: lhs, RHS: rhs}
+}
+
+func reduceBinaryExprNumberLHS(op Token, lhs *NumberLiteral, rhs Expr) Expr {
+	switch rhs := rhs.(type) {
+	case *NumberLiteral:
+		switch op {
+		case ADD:
+			return &NumberLiteral{Val: lhs.Val + rhs.Val}
+		case SUB:
+			return &NumberLiteral{Val: lhs.Val - rhs.Val}
+		case MUL:
+			return &NumberLiteral{Val: lhs.Val * rhs.Val}
+		case DIV:
+			if rhs.Val == 0 {
+				return &NumberLiteral{Val: 0}
+			}
+			return &NumberLiteral{Val: lhs.Val / rhs.Val}
+		case EQ:
+			return &BooleanLiteral{Val: lhs.Val == rhs.Val}
+		case NEQ:
+			return &BooleanLiteral{Val: lhs.Val != rhs.Val}
+		case GT:
+			return &BooleanLiteral{Val: lhs.Val > rhs.Val}
+		case GTE:
+			return &BooleanLiteral{Val: lhs.Val >= rhs.Val}
+		case LT:
+			return &BooleanLiteral{Val: lhs.Val < rhs.Val}
+		case LTE:
+			return &BooleanLiteral{Val: lhs.Val <= rhs.Val}
+		}
+	case *nilLiteral:
+		return &BooleanLiteral{Val: false}
+	}
+	return &BinaryExpr{Op: op, LHS: lhs, RHS: rhs}
+}
+
+func reduceBinaryExprStringLHS(op Token, lhs *StringLiteral, rhs Expr) Expr {
+	switch rhs := rhs.(type) {
+	case *StringLiteral:
+		switch op {
+		case EQ:
+			return &BooleanLiteral{Val: lhs.Val == rhs.Val}
+		case NEQ:
+			return &BooleanLiteral{Val: lhs.Val != rhs.Val}
+		case ADD:
+			return &StringLiteral{Val: lhs.Val + rhs.Val}
+		}
+	case *nilLiteral:
+		switch op {
+		case EQ, NEQ:
+			return &BooleanLiteral{Val: false}
+		}
+	}
+	return &BinaryExpr{Op: op, LHS: lhs, RHS: rhs}
+}
+
+func reduceBinaryExprTimeLHS(op Token, lhs *TimeLiteral, rhs Expr) Expr {
+	switch rhs := rhs.(type) {
+	case *DurationLiteral:
+		switch op {
+		case ADD:
+			return &TimeLiteral{Val: lhs.Val.Add(rhs.Val)}
+		case SUB:
+			return &TimeLiteral{Val: lhs.Val.Add(-rhs.Val)}
+		}
+	case *TimeLiteral:
+		switch op {
+		case SUB:
+			return &DurationLiteral{Val: lhs.Val.Sub(rhs.Val)}
+		case EQ:
+			return &BooleanLiteral{Val: lhs.Val.Equal(rhs.Val)}
+		case NEQ:
+			return &BooleanLiteral{Val: !lhs.Val.Equal(rhs.Val)}
+		case GT:
+			return &BooleanLiteral{Val: lhs.Val.After(rhs.Val)}
+		case GTE:
+			return &BooleanLiteral{Val: lhs.Val.After(rhs.Val) || lhs.Val.Equal(rhs.Val)}
+		case LT:
+			return &BooleanLiteral{Val: lhs.Val.Before(rhs.Val)}
+		case LTE:
+			return &BooleanLiteral{Val: lhs.Val.Before(rhs.Val) || lhs.Val.Equal(rhs.Val)}
+		}
+	case *nilLiteral:
+		return &BooleanLiteral{Val: false}
+	}
+	return &BinaryExpr{Op: op, LHS: lhs, RHS: rhs}
+}
+
+func reduceCall(expr *Call, valuer Valuer) Expr {
+	// Evaluate "now()" if valuer is set.
+	if strings.ToLower(expr.Name) == "now" && len(expr.Args) == 0 && valuer != nil {
+		if v, ok := valuer.Value("now()"); ok {
+			v, _ := v.(time.Time)
+			return &TimeLiteral{Val: v}
+		}
+	}
+
+	// Otherwise reduce arguments.
+	args := make([]Expr, len(expr.Args))
+	for i, arg := range expr.Args {
+		args[i] = reduce(arg, valuer)
+	}
+	return &Call{Name: expr.Name, Args: args}
+}
+
+func reduceParenExpr(expr *ParenExpr, valuer Valuer) Expr {
+	subexpr := reduce(expr.Expr, valuer)
+	if subexpr, ok := subexpr.(*BinaryExpr); ok {
+		return &ParenExpr{Expr: subexpr}
+	}
+	return subexpr
+}
+
+func reduceVarRef(expr *VarRef, valuer Valuer) Expr {
+	// Ignore if there is no valuer.
+	if valuer == nil {
+		return &VarRef{Val: expr.Val}
+	}
+
+	// Retrieve the value of the ref.
+	// Ignore if the value doesn't exist.
+	v, ok := valuer.Value(expr.Val)
+	if !ok {
+		return &VarRef{Val: expr.Val}
+	}
+
+	// Return the value as a literal.
+	switch v := v.(type) {
+	case bool:
+		return &BooleanLiteral{Val: v}
+	case time.Duration:
+		return &DurationLiteral{Val: v}
+	case float64:
+		return &NumberLiteral{Val: v}
+	case string:
+		return &StringLiteral{Val: v}
+	case time.Time:
+		return &TimeLiteral{Val: v}
+	default:
+		return &nilLiteral{}
+	}
+}
+
+// Valuer is the interface that wraps the Value() method.
+//
+// Value returns the value and existence flag for a given key.
+type Valuer interface {
+	Value(key string) (interface{}, bool)
+}
+
+// nowValuer returns only the value for "now()".
+type nowValuer struct {
+	Now time.Time
+}
+
+func (v *nowValuer) Value(key string) (interface{}, bool) {
+	if key == "now()" {
+		return v.Now, true
+	}
+	return nil, false
+}

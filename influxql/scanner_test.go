@@ -54,21 +54,23 @@ func TestScanner_Scan(t *testing.T) {
 		{s: `)`, tok: influxql.RPAREN},
 		{s: `,`, tok: influxql.COMMA},
 		{s: `;`, tok: influxql.SEMICOLON},
+		{s: `.`, tok: influxql.DOT},
 
 		// Identifiers
 		{s: `foo`, tok: influxql.IDENT, lit: `foo`},
 		{s: `Zx12_3U_-`, tok: influxql.IDENT, lit: `Zx12_3U_`},
+		{s: `"foo".bar`, tok: influxql.IDENT, lit: `"foo".bar`},
 
 		{s: `true`, tok: influxql.TRUE},
 		{s: `false`, tok: influxql.FALSE},
 
 		// Strings
-		{s: `"testing 123!"`, tok: influxql.STRING, lit: `testing 123!`},
-		{s: `"foo\nbar"`, tok: influxql.STRING, lit: "foo\nbar"},
-		{s: `"foo\\bar"`, tok: influxql.STRING, lit: "foo\\bar"},
-		{s: `"test`, tok: influxql.BADSTRING, lit: `test`},
-		{s: "\"test\nfoo", tok: influxql.BADSTRING, lit: `test`},
-		{s: `"test\g"`, tok: influxql.BADESCAPE, lit: `\g`, pos: influxql.Pos{Line: 0, Char: 5}},
+		{s: `'testing 123!'`, tok: influxql.STRING, lit: `testing 123!`},
+		{s: `'foo\nbar'`, tok: influxql.STRING, lit: "foo\nbar"},
+		{s: `'foo\\bar'`, tok: influxql.STRING, lit: "foo\\bar"},
+		{s: `'test`, tok: influxql.BADSTRING, lit: `test`},
+		{s: "'test\nfoo", tok: influxql.BADSTRING, lit: `test`},
+		{s: `'test\g'`, tok: influxql.BADESCAPE, lit: `\g`, pos: influxql.Pos{Line: 0, Char: 6}},
 
 		// Numbers
 		{s: `100`, tok: influxql.NUMBER, lit: `100`},
@@ -79,48 +81,77 @@ func TestScanner_Scan(t *testing.T) {
 		{s: `.23`, tok: influxql.NUMBER, lit: `.23`},
 		{s: `+.23`, tok: influxql.NUMBER, lit: `+.23`},
 		{s: `-.23`, tok: influxql.NUMBER, lit: `-.23`},
-		{s: `.`, tok: influxql.ILLEGAL, lit: `.`},
+		//{s: `.`, tok: influxql.ILLEGAL, lit: `.`},
 		{s: `-.`, tok: influxql.SUB, lit: ``},
 		{s: `+.`, tok: influxql.ADD, lit: ``},
 		{s: `10.3s`, tok: influxql.NUMBER, lit: `10.3`},
 
 		// Durations
-		{s: `10u`, tok: influxql.DURATION, lit: `10u`},
-		{s: `10µ`, tok: influxql.DURATION, lit: `10µ`},
-		{s: `10ms`, tok: influxql.DURATION, lit: `10ms`},
-		{s: `-1s`, tok: influxql.DURATION, lit: `-1s`},
-		{s: `10m`, tok: influxql.DURATION, lit: `10m`},
-		{s: `10h`, tok: influxql.DURATION, lit: `10h`},
-		{s: `10d`, tok: influxql.DURATION, lit: `10d`},
-		{s: `10w`, tok: influxql.DURATION, lit: `10w`},
+		{s: `10u`, tok: influxql.DURATION_VAL, lit: `10u`},
+		{s: `10µ`, tok: influxql.DURATION_VAL, lit: `10µ`},
+		{s: `10ms`, tok: influxql.DURATION_VAL, lit: `10ms`},
+		{s: `-1s`, tok: influxql.DURATION_VAL, lit: `-1s`},
+		{s: `10m`, tok: influxql.DURATION_VAL, lit: `10m`},
+		{s: `10h`, tok: influxql.DURATION_VAL, lit: `10h`},
+		{s: `10d`, tok: influxql.DURATION_VAL, lit: `10d`},
+		{s: `10w`, tok: influxql.DURATION_VAL, lit: `10w`},
 		{s: `10x`, tok: influxql.NUMBER, lit: `10`}, // non-duration unit
 
 		// Keywords
+		{s: `ALL`, tok: influxql.ALL},
+		{s: `ALTER`, tok: influxql.ALTER},
 		{s: `AS`, tok: influxql.AS},
 		{s: `ASC`, tok: influxql.ASC},
+		{s: `BEGIN`, tok: influxql.BEGIN},
 		{s: `BY`, tok: influxql.BY},
+		{s: `CREATE`, tok: influxql.CREATE},
 		{s: `CONTINUOUS`, tok: influxql.CONTINUOUS},
+		{s: `DATABASE`, tok: influxql.DATABASE},
+		{s: `DATABASES`, tok: influxql.DATABASES},
+		{s: `DEFAULT`, tok: influxql.DEFAULT},
 		{s: `DELETE`, tok: influxql.DELETE},
 		{s: `DESC`, tok: influxql.DESC},
 		{s: `DROP`, tok: influxql.DROP},
+		{s: `DURATION`, tok: influxql.DURATION},
+		{s: `END`, tok: influxql.END},
+		{s: `EXISTS`, tok: influxql.EXISTS},
 		{s: `EXPLAIN`, tok: influxql.EXPLAIN},
 		{s: `FIELD`, tok: influxql.FIELD},
 		{s: `FROM`, tok: influxql.FROM},
+		{s: `GRANT`, tok: influxql.GRANT},
+		{s: `GROUP`, tok: influxql.GROUP},
+		{s: `IF`, tok: influxql.IF},
 		{s: `INNER`, tok: influxql.INNER},
 		{s: `INSERT`, tok: influxql.INSERT},
 		{s: `INTO`, tok: influxql.INTO},
+		{s: `KEY`, tok: influxql.KEY},
 		{s: `KEYS`, tok: influxql.KEYS},
 		{s: `LIMIT`, tok: influxql.LIMIT},
-		{s: `LIST`, tok: influxql.LIST},
+		{s: `SHOW`, tok: influxql.SHOW},
 		{s: `MEASUREMENT`, tok: influxql.MEASUREMENT},
 		{s: `MEASUREMENTS`, tok: influxql.MEASUREMENTS},
+		{s: `OFFSET`, tok: influxql.OFFSET},
+		{s: `ON`, tok: influxql.ON},
 		{s: `ORDER`, tok: influxql.ORDER},
+		{s: `PASSWORD`, tok: influxql.PASSWORD},
+		{s: `POLICY`, tok: influxql.POLICY},
+		{s: `POLICIES`, tok: influxql.POLICIES},
+		{s: `PRIVILEGES`, tok: influxql.PRIVILEGES},
 		{s: `QUERIES`, tok: influxql.QUERIES},
+		{s: `QUERY`, tok: influxql.QUERY},
+		{s: `READ`, tok: influxql.READ},
+		{s: `RETENTION`, tok: influxql.RETENTION},
+		{s: `REVOKE`, tok: influxql.REVOKE},
 		{s: `SELECT`, tok: influxql.SELECT},
 		{s: `SERIES`, tok: influxql.SERIES},
 		{s: `TAG`, tok: influxql.TAG},
+		{s: `TO`, tok: influxql.TO},
+		{s: `USER`, tok: influxql.USER},
+		{s: `USERS`, tok: influxql.USERS},
 		{s: `VALUES`, tok: influxql.VALUES},
 		{s: `WHERE`, tok: influxql.WHERE},
+		{s: `WITH`, tok: influxql.WITH},
+		{s: `WRITE`, tok: influxql.WRITE},
 		{s: `explain`, tok: influxql.EXPLAIN}, // case insensitive
 	}
 
@@ -159,12 +190,12 @@ func TestScanner_Scan_Multi(t *testing.T) {
 		{tok: influxql.WS, pos: influxql.Pos{Line: 0, Char: 34}, lit: " "},
 		{tok: influxql.EQ, pos: influxql.Pos{Line: 0, Char: 35}, lit: ""},
 		{tok: influxql.WS, pos: influxql.Pos{Line: 0, Char: 36}, lit: " "},
-		{tok: influxql.STRING, pos: influxql.Pos{Line: 0, Char: 37}, lit: "b"},
+		{tok: influxql.STRING, pos: influxql.Pos{Line: 0, Char: 36}, lit: "b"},
 		{tok: influxql.EOF, pos: influxql.Pos{Line: 0, Char: 40}, lit: ""},
 	}
 
 	// Create a scanner.
-	v := `SELECT value from myseries WHERE a = "b"`
+	v := `SELECT value from myseries WHERE a = 'b'`
 	s := influxql.NewScanner(strings.NewReader(v))
 
 	// Continually scan until we reach the end.
@@ -186,6 +217,68 @@ func TestScanner_Scan_Multi(t *testing.T) {
 	for i := range exp {
 		if !reflect.DeepEqual(exp[i], act[i]) {
 			t.Fatalf("%d. token mismatch:\n\nexp=%#v\n\ngot=%#v", i, exp[i], act[i])
+		}
+	}
+}
+
+// Ensure the library can correctly scan strings.
+func TestScanString(t *testing.T) {
+	var tests = []struct {
+		in  string
+		out string
+		err string
+	}{
+		{in: `""`, out: ``},
+		{in: `"foo bar"`, out: `foo bar`},
+		{in: `'foo bar'`, out: `foo bar`},
+		{in: `"foo\nbar"`, out: "foo\nbar"},
+		{in: `"foo\\bar"`, out: `foo\bar`},
+		{in: `"foo\"bar"`, out: `foo"bar`},
+
+		{in: `"foo` + "\n", out: `foo`, err: "bad string"}, // newline in string
+		{in: `"foo`, out: `foo`, err: "bad string"},        // unclosed quotes
+		{in: `"foo\xbar"`, out: `\x`, err: "bad escape"},   // invalid escape
+	}
+
+	for i, tt := range tests {
+		out, err := influxql.ScanString(strings.NewReader(tt.in))
+		if tt.err != errstring(err) {
+			t.Errorf("%d. %s: error: exp=%s, got=%s", i, tt.in, tt.err, err)
+		} else if tt.out != out {
+			t.Errorf("%d. %s: out: exp=%s, got=%s", i, tt.in, tt.out, out)
+		}
+	}
+}
+
+// Ensure identifiers can be split into multiple quoted and unquoted parts.
+func TestSplitIdent(t *testing.T) {
+	var tests = []struct {
+		in  string
+		out []string
+		err string
+	}{
+		{in: `"db"."rp"."measurement"`, out: []string{`db`, `rp`, `measurement`}},
+		{in: `"db"."rp".measurement`, out: []string{`db`, `rp`, `measurement`}},
+		{in: `cpu.load.total`, out: []string{`cpu.load.total`}},
+		{in: `"rp".cpu.load.total`, out: []string{`rp`, `cpu.load.total`}},
+		{in: `"db"..cpu.load.total`, out: []string{`db`, ``, `cpu.load.total`}},
+		{in: `db."rp".cpu.total`, out: []string{`db`, `rp`, `cpu.total`}},
+		{in: `db...cpu`, out: []string{`db`, ``, ``, `cpu`}},
+		{in: `"db.rp".cpu`, out: []string{`db.rp`, `cpu`}},
+
+		{in: ``, err: "invalid identifier"},
+		{in: `.`, err: "invalid identifier"},
+		{in: `.cpu`, err: "invalid identifier"},
+		{in: `db.`, err: "invalid identifier"},
+		{in: `hello world`, err: "invalid identifier"},
+	}
+
+	for i, tt := range tests {
+		out, err := influxql.SplitIdent(tt.in)
+		if tt.err != errstring(err) {
+			t.Errorf("%d. %s: error: exp=%s, got=%s", i, tt.in, tt.err, err)
+		} else if !reflect.DeepEqual(tt.out, out) {
+			t.Errorf("%d. %s: out: exp=%s, got=%s", i, tt.in, tt.out, out)
 		}
 	}
 }
