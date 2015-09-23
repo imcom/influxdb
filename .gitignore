@@ -3,16 +3,9 @@ src/
 .idea
 
 config.json
-/test
 /bin/
 
-/pkg/
-
 TAGS
-
-flymake.sh
-refresh_tags.sh
-a.out
 
 # vim temp files
 *.swp
@@ -23,16 +16,25 @@ a.out
 
 # ignore generated files.
 cmd/influxd/version.go
-parser/lex.yy.c
-parser/y.tab.h
-parser/y.tab.c
-parser/test_memory_leaks
-protocol/protocol.pb.go
-build/
 
 # executables
-/influxd
-/influxdb
+
+influx_stress
+**/influx_stress
+!**/influx_stress/
+
+influxd
+**/influxd
+!**/influxd/
+
+influx
+**/influx
+!**/influx/
+
+influxdb
+**/influxdb
+!**/influxdb/
+
 /benchmark-tool
 /main
 /benchmark-storage
@@ -57,12 +59,15 @@ benchmark.log
 
 # config file
 config.toml
-/admin
-/admin/
-/data/
 
 # test data files
 integration/migration_data/
 
 # goide project files
 .idea
+
+# goconvey config files
+*.goconvey
+
+// Ingnore SourceGraph directory
+.srclib-store/

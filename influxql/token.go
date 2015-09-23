@@ -23,6 +23,8 @@ const (
 	BADESCAPE    // \q
 	TRUE         // true
 	FALSE        // false
+	REGEX        // Regular expressions
+	BADREGEX     // `.*
 	literal_end
 
 	operator_beg
@@ -35,17 +37,20 @@ const (
 	AND // AND
 	OR  // OR
 
-	EQ  // =
-	NEQ // !=
-	LT  // <
-	LTE // <=
-	GT  // >
-	GTE // >=
+	EQ       // =
+	NEQ      // !=
+	EQREGEX  // =~
+	NEQREGEX // !~
+	LT       // <
+	LTE      // <=
+	GT       // >
+	GTE      // >=
 	operator_end
 
 	LPAREN    // (
 	RPAREN    // )
 	COMMA     // ,
+	COLON     // :
 	SEMICOLON // ;
 	DOT       // .
 
@@ -64,26 +69,30 @@ const (
 	DEFAULT
 	DELETE
 	DESC
+	DISTINCT
 	DROP
 	DURATION
 	END
 	EXISTS
 	EXPLAIN
 	FIELD
+	FOR
 	FROM
 	GRANT
+	GRANTS
 	GROUP
 	IF
 	IN
+	INF
 	INNER
 	INSERT
 	INTO
 	KEY
 	KEYS
 	LIMIT
-	SHOW
 	MEASUREMENT
 	MEASUREMENTS
+	NOT
 	OFFSET
 	ON
 	ORDER
@@ -99,6 +108,14 @@ const (
 	REVOKE
 	SELECT
 	SERIES
+	SERVERS
+	SET
+	SHOW
+	SHARDS
+	SLIMIT
+	STATS
+	DIAGNOSTICS
+	SOFFSET
 	TAG
 	TO
 	USER
@@ -119,8 +136,11 @@ var tokens = [...]string{
 	NUMBER:       "NUMBER",
 	DURATION_VAL: "DURATION_VAL",
 	STRING:       "STRING",
+	BADSTRING:    "BADSTRING",
+	BADESCAPE:    "BADESCAPE",
 	TRUE:         "TRUE",
 	FALSE:        "FALSE",
+	REGEX:        "REGEX",
 
 	ADD: "+",
 	SUB: "-",
@@ -130,16 +150,19 @@ var tokens = [...]string{
 	AND: "AND",
 	OR:  "OR",
 
-	EQ:  "=",
-	NEQ: "!=",
-	LT:  "<",
-	LTE: "<=",
-	GT:  ">",
-	GTE: ">=",
+	EQ:       "=",
+	NEQ:      "!=",
+	EQREGEX:  "=~",
+	NEQREGEX: "!~",
+	LT:       "<",
+	LTE:      "<=",
+	GT:       ">",
+	GTE:      ">=",
 
 	LPAREN:    "(",
 	RPAREN:    ")",
 	COMMA:     ",",
+	COLON:     ":",
 	SEMICOLON: ";",
 	DOT:       ".",
 
@@ -157,25 +180,29 @@ var tokens = [...]string{
 	DELETE:       "DELETE",
 	DESC:         "DESC",
 	DROP:         "DROP",
+	DISTINCT:     "DISTINCT",
 	DURATION:     "DURATION",
 	END:          "END",
 	EXISTS:       "EXISTS",
 	EXPLAIN:      "EXPLAIN",
 	FIELD:        "FIELD",
+	FOR:          "FOR",
 	FROM:         "FROM",
 	GRANT:        "GRANT",
+	GRANTS:       "GRANTS",
 	GROUP:        "GROUP",
 	IF:           "IF",
 	IN:           "IN",
+	INF:          "INF",
 	INNER:        "INNER",
 	INSERT:       "INSERT",
 	INTO:         "INTO",
 	KEY:          "KEY",
 	KEYS:         "KEYS",
 	LIMIT:        "LIMIT",
-	SHOW:         "SHOW",
 	MEASUREMENT:  "MEASUREMENT",
 	MEASUREMENTS: "MEASUREMENTS",
+	NOT:          "NOT",
 	OFFSET:       "OFFSET",
 	ON:           "ON",
 	ORDER:        "ORDER",
@@ -191,6 +218,14 @@ var tokens = [...]string{
 	REVOKE:       "REVOKE",
 	SELECT:       "SELECT",
 	SERIES:       "SERIES",
+	SERVERS:      "SERVERS",
+	SET:          "SET",
+	SHOW:         "SHOW",
+	SHARDS:       "SHARDS",
+	SLIMIT:       "SLIMIT",
+	SOFFSET:      "SOFFSET",
+	STATS:        "STATS",
+	DIAGNOSTICS:  "DIAGNOSTICS",
 	TAG:          "TAG",
 	TO:           "TO",
 	USER:         "USER",
@@ -206,11 +241,9 @@ var keywords map[string]Token
 func init() {
 	keywords = make(map[string]Token)
 	for tok := keyword_beg + 1; tok < keyword_end; tok++ {
-		keywords[strings.ToUpper(tokens[tok])] = tok
 		keywords[strings.ToLower(tokens[tok])] = tok
 	}
 	for _, tok := range []Token{AND, OR} {
-		keywords[strings.ToUpper(tokens[tok])] = tok
 		keywords[strings.ToLower(tokens[tok])] = tok
 	}
 	keywords["true"] = TRUE
@@ -232,7 +265,7 @@ func (tok Token) Precedence() int {
 		return 1
 	case AND:
 		return 2
-	case EQ, NEQ, LT, LTE, GT, GTE:
+	case EQ, NEQ, EQREGEX, NEQREGEX, LT, LTE, GT, GTE:
 		return 3
 	case ADD, SUB:
 		return 4
@@ -255,7 +288,7 @@ func tokstr(tok Token, lit string) string {
 
 // Lookup returns the token associated with a given string.
 func Lookup(ident string) Token {
-	if tok, ok := keywords[ident]; ok {
+	if tok, ok := keywords[strings.ToLower(ident)]; ok {
 		return tok
 	}
 	return IDENT

@@ -1,9 +1,11 @@
 package influxql_test
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/influxdb/influxdb/influxql"
 )
@@ -14,7 +16,7 @@ func TestInspectDataType(t *testing.T) {
 		v   interface{}
 		typ influxql.DataType
 	}{
-		{float64(100), influxql.Number},
+		{float64(100), influxql.Float},
 	} {
 		if typ := influxql.InspectDataType(tt.v); tt.typ != typ {
 			t.Errorf("%d. %v (%s): unexpected type: %s", i, tt.v, tt.typ, typ)
@@ -40,37 +42,37 @@ func TestSelectStatement_Substatement(t *testing.T) {
 
 		// 1. Simple join
 		{
-			stmt: `SELECT sum(aa.value) + sum(bb.value) FROM join(aa,bb)`,
+			stmt: `SELECT sum(aa.value) + sum(bb.value) FROM aa, bb`,
 			expr: &influxql.VarRef{Val: "aa.value"},
-			sub:  `SELECT aa.value FROM aa`,
+			sub:  `SELECT "aa.value" FROM aa`,
 		},
 
 		// 2. Simple merge
 		{
-			stmt: `SELECT sum(aa.value) + sum(bb.value) FROM merge(aa, bb)`,
+			stmt: `SELECT sum(aa.value) + sum(bb.value) FROM aa, bb`,
 			expr: &influxql.VarRef{Val: "bb.value"},
-			sub:  `SELECT bb.value FROM bb`,
+			sub:  `SELECT "bb.value" FROM bb`,
 		},
 
 		// 3. Join with condition
 		{
-			stmt: `SELECT sum(aa.value) + sum(bb.value) FROM join(aa, bb) WHERE aa.host = 'servera' AND bb.host = 'serverb'`,
+			stmt: `SELECT sum(aa.value) + sum(bb.value) FROM aa, bb WHERE aa.host = 'servera' AND bb.host = 'serverb'`,
 			expr: &influxql.VarRef{Val: "bb.value"},
-			sub:  `SELECT bb.value FROM bb WHERE bb.host = 'serverb'`,
+			sub:  `SELECT "bb.value" FROM bb WHERE "bb.host" = 'serverb'`,
 		},
 
 		// 4. Join with complex condition
 		{
-			stmt: `SELECT sum(aa.value) + sum(bb.value) FROM join(aa, bb) WHERE aa.host = 'servera' AND (bb.host = 'serverb' OR bb.host = 'serverc') AND 1 = 2`,
+			stmt: `SELECT sum(aa.value) + sum(bb.value) FROM aa, bb WHERE aa.host = 'servera' AND (bb.host = 'serverb' OR bb.host = 'serverc') AND 1 = 2`,
 			expr: &influxql.VarRef{Val: "bb.value"},
-			sub:  `SELECT bb.value FROM bb WHERE (bb.host = 'serverb' OR bb.host = 'serverc') AND 1.000 = 2.000`,
+			sub:  `SELECT "bb.value" FROM bb WHERE ("bb.host" = 'serverb' OR "bb.host" = 'serverc') AND 1.000 = 2.000`,
 		},
 
 		// 5. 4 with different condition order
 		{
-			stmt: `SELECT sum(aa.value) + sum(bb.value) FROM join(aa, bb) WHERE ((bb.host = 'serverb' OR bb.host = 'serverc') AND aa.host = 'servera') AND 1 = 2`,
+			stmt: `SELECT sum(aa.value) + sum(bb.value) FROM aa, bb WHERE ((bb.host = 'serverb' OR bb.host = 'serverc') AND aa.host = 'servera') AND 1 = 2`,
 			expr: &influxql.VarRef{Val: "bb.value"},
-			sub:  `SELECT bb.value FROM bb WHERE ((bb.host = 'serverb' OR bb.host = 'serverc')) AND 1.000 = 2.000`,
+			sub:  `SELECT "bb.value" FROM bb WHERE (("bb.host" = 'serverb' OR "bb.host" = 'serverc')) AND 1.000 = 2.000`,
 		},
 	}
 
@@ -94,6 +96,375 @@ func TestSelectStatement_Substatement(t *testing.T) {
 	}
 }
 
+// Ensure the SELECT statement can extract GROUP BY interval.
+func TestSelectStatement_GroupByInterval(t *testing.T) {
+	q := "SELECT sum(value) from foo  where time < now() GROUP BY time(10m)"
+	stmt, err := influxql.NewParser(strings.NewReader(q)).ParseStatement()
+	if err != nil {
+		t.Fatalf("invalid statement: %q: %s", stmt, err)
+	}
+
+	s := stmt.(*influxql.SelectStatement)
+	d, err := s.GroupByInterval()
+	if d != 10*time.Minute {
+		t.Fatalf("group by interval not equal:\nexp=%s\ngot=%s", 10*time.Minute, d)
+	}
+	if err != nil {
+		t.Fatalf("error parsing group by interval: %s", err.Error())
+	}
+}
+
+// Ensure the SELECT statement can have its start and end time set
+func TestSelectStatement_SetTimeRange(t *testing.T) {
+	q := "SELECT sum(value) from foo where time < now() GROUP BY time(10m)"
+	stmt, err := influxql.NewParser(strings.NewReader(q)).ParseStatement()
+	if err != nil {
+		t.Fatalf("invalid statement: %q: %s", stmt, err)
+	}
+
+	s := stmt.(*influxql.SelectStatement)
+	min, max := influxql.TimeRange(s.Condition)
+	start := time.Now().Add(-20 * time.Hour).Round(time.Second).UTC()
+	end := time.Now().Add(10 * time.Hour).Round(time.Second).UTC()
+	s.SetTimeRange(start, end)
+	min, max = influxql.TimeRange(s.Condition)
+
+	if min != start {
+		t.Fatalf("start time wasn't set properly.\n  exp: %s\n  got: %s", start, min)
+	}
+	// the end range is actually one nanosecond before the given one since end is exclusive
+	end = end.Add(-time.Nanosecond)
+	if max != end {
+		t.Fatalf("end time wasn't set properly.\n  exp: %s\n  got: %s", end, max)
+	}
+
+	// ensure we can set a time on a select that already has one set
+	start = time.Now().Add(-20 * time.Hour).Round(time.Second).UTC()
+	end = time.Now().Add(10 * time.Hour).Round(time.Second).UTC()
+	q = fmt.Sprintf("SELECT sum(value) from foo WHERE time >= %ds and time <= %ds GROUP BY time(10m)", start.Unix(), end.Unix())
+	stmt, err = influxql.NewParser(strings.NewReader(q)).ParseStatement()
+	if err != nil {
+		t.Fatalf("invalid statement: %q: %s", stmt, err)
+	}
+
+	s = stmt.(*influxql.SelectStatement)
+	min, max = influxql.TimeRange(s.Condition)
+	if start != min || end != max {
+		t.Fatalf("start and end times weren't equal:\n  exp: %s\n  got: %s\n  exp: %s\n  got:%s\n", start, min, end, max)
+	}
+
+	// update and ensure it saves it
+	start = time.Now().Add(-40 * time.Hour).Round(time.Second).UTC()
+	end = time.Now().Add(20 * time.Hour).Round(time.Second).UTC()
+	s.SetTimeRange(start, end)
+	min, max = influxql.TimeRange(s.Condition)
+
+	// TODO: right now the SetTimeRange can't override the start time if it's more recent than what they're trying to set it to.
+	//       shouldn't matter for our purposes with continuous queries, but fix this later
+
+	if min != start {
+		t.Fatalf("start time wasn't set properly.\n  exp: %s\n  got: %s", start, min)
+	}
+	// the end range is actually one nanosecond before the given one since end is exclusive
+	end = end.Add(-time.Nanosecond)
+	if max != end {
+		t.Fatalf("end time wasn't set properly.\n  exp: %s\n  got: %s", end, max)
+	}
+
+	// ensure that when we set a time range other where clause conditions are still there
+	q = "SELECT sum(value) from foo WHERE foo = 'bar' and time < now() GROUP BY time(10m)"
+	stmt, err = influxql.NewParser(strings.NewReader(q)).ParseStatement()
+	if err != nil {
+		t.Fatalf("invalid statement: %q: %s", stmt, err)
+	}
+
+	s = stmt.(*influxql.SelectStatement)
+
+	// update and ensure it saves it
+	start = time.Now().Add(-40 * time.Hour).Round(time.Second).UTC()
+	end = time.Now().Add(20 * time.Hour).Round(time.Second).UTC()
+	s.SetTimeRange(start, end)
+	min, max = influxql.TimeRange(s.Condition)
+
+	if min != start {
+		t.Fatalf("start time wasn't set properly.\n  exp: %s\n  got: %s", start, min)
+	}
+	// the end range is actually one nanosecond before the given one since end is exclusive
+	end = end.Add(-time.Nanosecond)
+	if max != end {
+		t.Fatalf("end time wasn't set properly.\n  exp: %s\n  got: %s", end, max)
+	}
+
+	// ensure the where clause is there
+	hasWhere := false
+	influxql.WalkFunc(s.Condition, func(n influxql.Node) {
+		if ex, ok := n.(*influxql.BinaryExpr); ok {
+			if lhs, ok := ex.LHS.(*influxql.VarRef); ok {
+				if lhs.Val == "foo" {
+					if rhs, ok := ex.RHS.(*influxql.StringLiteral); ok {
+						if rhs.Val == "bar" {
+							hasWhere = true
+						}
+					}
+				}
+			}
+		}
+	})
+	if !hasWhere {
+		t.Fatal("set time range cleared out the where clause")
+	}
+}
+
+// Ensure the idents from the select clause can come out
+func TestSelect_NamesInSelect(t *testing.T) {
+	s := MustParseSelectStatement("select count(asdf), count(bar) from cpu")
+	a := s.NamesInSelect()
+	if !reflect.DeepEqual(a, []string{"asdf", "bar"}) {
+		t.Fatal("expected names asdf and bar")
+	}
+}
+
+// Ensure the idents from the where clause can come out
+func TestSelect_NamesInWhere(t *testing.T) {
+	s := MustParseSelectStatement("select * from cpu where time > 23s AND (asdf = 'jkl' OR (foo = 'bar' AND baz = 'bar'))")
+	a := s.NamesInWhere()
+	if !reflect.DeepEqual(a, []string{"time", "asdf", "foo", "baz"}) {
+		t.Fatalf("exp: time,asdf,foo,baz\ngot: %s\n", strings.Join(a, ","))
+	}
+}
+
+func TestSelectStatement_HasWildcard(t *testing.T) {
+	var tests = []struct {
+		stmt     string
+		wildcard bool
+	}{
+		// No wildcards
+		{
+			stmt:     `SELECT value FROM cpu`,
+			wildcard: false,
+		},
+
+		// Query wildcard
+		{
+			stmt:     `SELECT * FROM cpu`,
+			wildcard: true,
+		},
+
+		// No GROUP BY wildcards
+		{
+			stmt:     `SELECT value FROM cpu GROUP BY host`,
+			wildcard: false,
+		},
+
+		// No GROUP BY wildcards, time only
+		{
+			stmt:     `SELECT mean(value) FROM cpu where time < now() GROUP BY time(5ms)`,
+			wildcard: false,
+		},
+
+		// GROUP BY wildcard
+		{
+			stmt:     `SELECT value FROM cpu GROUP BY *`,
+			wildcard: true,
+		},
+
+		// GROUP BY wildcard with time
+		{
+			stmt:     `SELECT mean(value) FROM cpu where time < now() GROUP BY *,time(1m)`,
+			wildcard: true,
+		},
+
+		// GROUP BY wildcard with explicit
+		{
+			stmt:     `SELECT value FROM cpu GROUP BY *,host`,
+			wildcard: true,
+		},
+
+		// GROUP BY multiple wildcards
+		{
+			stmt:     `SELECT value FROM cpu GROUP BY *,*`,
+			wildcard: true,
+		},
+
+		// Combo
+		{
+			stmt:     `SELECT * FROM cpu GROUP BY *`,
+			wildcard: true,
+		},
+	}
+
+	for i, tt := range tests {
+		// Parse statement.
+		t.Logf("index: %d, statement: %s", i, tt.stmt)
+		stmt, err := influxql.NewParser(strings.NewReader(tt.stmt)).ParseStatement()
+		if err != nil {
+			t.Fatalf("invalid statement: %q: %s", tt.stmt, err)
+		}
+
+		// Test wildcard detection.
+		if w := stmt.(*influxql.SelectStatement).HasWildcard(); tt.wildcard != w {
+			t.Errorf("%d. %q: unexpected wildcard detection:\n\nexp=%v\n\ngot=%v\n\n", i, tt.stmt, tt.wildcard, w)
+			continue
+		}
+	}
+}
+
+// Test SELECT statement wildcard rewrite.
+func TestSelectStatement_RewriteWildcards(t *testing.T) {
+	var fields = influxql.Fields{
+		&influxql.Field{Expr: &influxql.VarRef{Val: "value1"}},
+		&influxql.Field{Expr: &influxql.VarRef{Val: "value2"}},
+	}
+	var dimensions = influxql.Dimensions{
+		&influxql.Dimension{Expr: &influxql.VarRef{Val: "host"}},
+		&influxql.Dimension{Expr: &influxql.VarRef{Val: "region"}},
+	}
+
+	var tests = []struct {
+		stmt    string
+		rewrite string
+	}{
+		// No wildcards
+		{
+			stmt:    `SELECT value FROM cpu`,
+			rewrite: `SELECT value FROM cpu`,
+		},
+
+		// Query wildcard
+		{
+			stmt:    `SELECT * FROM cpu`,
+			rewrite: `SELECT value1, value2 FROM cpu GROUP BY host, region`,
+		},
+
+		// Parser fundamentally prohibits multiple query sources
+
+		// Query wildcard with explicit
+		// {
+		//	stmt:    `SELECT *,value1 FROM cpu`,
+		//		rewrite: `SELECT value1, value2, value1 FROM cpu`,
+		//	},
+
+		// Query multiple wildcards
+		//	{
+		//			stmt:    `SELECT *,* FROM cpu`,
+		//			rewrite: `SELECT value1,value2,value1,value2 FROM cpu`,
+		//  },
+
+		// No GROUP BY wildcards
+		{
+			stmt:    `SELECT value FROM cpu GROUP BY host`,
+			rewrite: `SELECT value FROM cpu GROUP BY host`,
+		},
+
+		// No GROUP BY wildcards, time only
+		{
+			stmt:    `SELECT mean(value) FROM cpu where time < now() GROUP BY time(5ms)`,
+			rewrite: `SELECT mean(value) FROM cpu WHERE time < now() GROUP BY time(5ms)`,
+		},
+
+		// GROUP BY wildcard
+		{
+			stmt:    `SELECT value FROM cpu GROUP BY *`,
+			rewrite: `SELECT value FROM cpu GROUP BY host, region`,
+		},
+
+		// GROUP BY wildcard with time
+		{
+			stmt:    `SELECT mean(value) FROM cpu where time < now() GROUP BY *,time(1m)`,
+			rewrite: `SELECT mean(value) FROM cpu WHERE time < now() GROUP BY host, region, time(1m)`,
+		},
+
+		// GROUP BY wildarde with fill
+		{
+			stmt:    `SELECT mean(value) FROM cpu where time < now() GROUP BY *,time(1m) fill(0)`,
+			rewrite: `SELECT mean(value) FROM cpu WHERE time < now() GROUP BY host, region, time(1m) fill(0)`,
+		},
+
+		// GROUP BY wildcard with explicit
+		{
+			stmt:    `SELECT value FROM cpu GROUP BY *,host`,
+			rewrite: `SELECT value FROM cpu GROUP BY host, region, host`,
+		},
+
+		// GROUP BY multiple wildcards
+		{
+			stmt:    `SELECT value FROM cpu GROUP BY *,*`,
+			rewrite: `SELECT value FROM cpu GROUP BY host, region, host, region`,
+		},
+
+		// Combo
+		{
+			stmt:    `SELECT * FROM cpu GROUP BY *`,
+			rewrite: `SELECT value1, value2 FROM cpu GROUP BY host, region`,
+		},
+	}
+
+	for i, tt := range tests {
+		t.Logf("index: %d, statement: %s", i, tt.stmt)
+		// Parse statement.
+		stmt, err := influxql.NewParser(strings.NewReader(tt.stmt)).ParseStatement()
+		if err != nil {
+			t.Fatalf("invalid statement: %q: %s", tt.stmt, err)
+		}
+
+		// Rewrite statement.
+		rw := stmt.(*influxql.SelectStatement).RewriteWildcards(fields, dimensions)
+		if rw == nil {
+			t.Errorf("%d. %q: unexpected nil statement", i, tt.stmt)
+			continue
+		}
+		if rw := rw.String(); tt.rewrite != rw {
+			t.Errorf("%d. %q: unexpected rewrite:\n\nexp=%s\n\ngot=%s\n\n", i, tt.stmt, tt.rewrite, rw)
+			continue
+		}
+	}
+}
+
+// Ensure that the IsRawQuery flag gets set properly
+func TestSelectStatement_IsRawQuerySet(t *testing.T) {
+	var tests = []struct {
+		stmt  string
+		isRaw bool
+	}{
+		{
+			stmt:  "select * from foo",
+			isRaw: true,
+		},
+		{
+			stmt:  "select value1,value2 from foo",
+			isRaw: true,
+		},
+		{
+			stmt:  "select value1,value2 from foo, time(10m)",
+			isRaw: true,
+		},
+		{
+			stmt:  "select mean(value) from foo where time < now() group by time(5m)",
+			isRaw: false,
+		},
+		{
+			stmt:  "select mean(value) from foo group by bar",
+			isRaw: false,
+		},
+		{
+			stmt:  "select mean(value) from foo group by *",
+			isRaw: false,
+		},
+		{
+			stmt:  "select mean(value) from foo group by *",
+			isRaw: false,
+		},
+	}
+
+	for i, tt := range tests {
+		t.Logf("index: %d, statement: %s", i, tt.stmt)
+		s := MustParseSelectStatement(tt.stmt)
+		if s.IsRawQuery != tt.isRaw {
+			t.Errorf("'%s', IsRawQuery should be %v", tt.stmt, tt.isRaw)
+		}
+	}
+}
+
 // Ensure the time range of an expression can be extracted.
 func TestTimeRange(t *testing.T) {
 	for i, tt := range []struct {
@@ -101,47 +472,90 @@ func TestTimeRange(t *testing.T) {
 		min, max string
 	}{
 		// LHS VarRef
-		{expr: `time > '2000-01-01 00:00:00'`, min: `2000-01-01 00:00:00.000001`, max: `0001-01-01 00:00:00`},
-		{expr: `time >= '2000-01-01 00:00:00'`, min: `2000-01-01 00:00:00`, max: `0001-01-01 00:00:00`},
-		{expr: `time < '2000-01-01 00:00:00'`, min: `0001-01-01 00:00:00`, max: `1999-12-31 23:59:59.999999`},
-		{expr: `time <= '2000-01-01 00:00:00'`, min: `0001-01-01 00:00:00`, max: `2000-01-01 00:00:00`},
+		{expr: `time > '2000-01-01 00:00:00'`, min: `2000-01-01T00:00:00.000000001Z`, max: `0001-01-01T00:00:00Z`},
+		{expr: `time >= '2000-01-01 00:00:00'`, min: `2000-01-01T00:00:00Z`, max: `0001-01-01T00:00:00Z`},
+		{expr: `time < '2000-01-01 00:00:00'`, min: `0001-01-01T00:00:00Z`, max: `1999-12-31T23:59:59.999999999Z`},
+		{expr: `time <= '2000-01-01 00:00:00'`, min: `0001-01-01T00:00:00Z`, max: `2000-01-01T00:00:00Z`},
 
 		// RHS VarRef
-		{expr: `'2000-01-01 00:00:00' > time`, min: `0001-01-01 00:00:00`, max: `1999-12-31 23:59:59.999999`},
-		{expr: `'2000-01-01 00:00:00' >= time`, min: `0001-01-01 00:00:00`, max: `2000-01-01 00:00:00`},
-		{expr: `'2000-01-01 00:00:00' < time`, min: `2000-01-01 00:00:00.000001`, max: `0001-01-01 00:00:00`},
-		{expr: `'2000-01-01 00:00:00' <= time`, min: `2000-01-01 00:00:00`, max: `0001-01-01 00:00:00`},
+		{expr: `'2000-01-01 00:00:00' > time`, min: `0001-01-01T00:00:00Z`, max: `1999-12-31T23:59:59.999999999Z`},
+		{expr: `'2000-01-01 00:00:00' >= time`, min: `0001-01-01T00:00:00Z`, max: `2000-01-01T00:00:00Z`},
+		{expr: `'2000-01-01 00:00:00' < time`, min: `2000-01-01T00:00:00.000000001Z`, max: `0001-01-01T00:00:00Z`},
+		{expr: `'2000-01-01 00:00:00' <= time`, min: `2000-01-01T00:00:00Z`, max: `0001-01-01T00:00:00Z`},
+
+		// number literal
+		{expr: `time < 10`, min: `0001-01-01T00:00:00Z`, max: `1970-01-01T00:00:00.000000009Z`},
 
 		// Equality
-		{expr: `time = '2000-01-01 00:00:00'`, min: `2000-01-01 00:00:00`, max: `2000-01-01 00:00:00`},
+		{expr: `time = '2000-01-01 00:00:00'`, min: `2000-01-01T00:00:00Z`, max: `2000-01-01T00:00:00Z`},
 
 		// Multiple time expressions.
-		{expr: `time >= '2000-01-01 00:00:00' AND time < '2000-01-02 00:00:00'`, min: `2000-01-01 00:00:00`, max: `2000-01-01 23:59:59.999999`},
+		{expr: `time >= '2000-01-01 00:00:00' AND time < '2000-01-02 00:00:00'`, min: `2000-01-01T00:00:00Z`, max: `2000-01-01T23:59:59.999999999Z`},
 
 		// Min/max crossover
-		{expr: `time >= '2000-01-01 00:00:00' AND time <= '1999-01-01 00:00:00'`, min: `2000-01-01 00:00:00`, max: `1999-01-01 00:00:00`},
+		{expr: `time >= '2000-01-01 00:00:00' AND time <= '1999-01-01 00:00:00'`, min: `2000-01-01T00:00:00Z`, max: `1999-01-01T00:00:00Z`},
 
 		// Absolute time
-		{expr: `time = 1388534400s`, min: `2014-01-01 00:00:00`, max: `2014-01-01 00:00:00`},
+		{expr: `time = 1388534400s`, min: `2014-01-01T00:00:00Z`, max: `2014-01-01T00:00:00Z`},
 
 		// Non-comparative expressions.
-		{expr: `time`, min: `0001-01-01 00:00:00`, max: `0001-01-01 00:00:00`},
-		{expr: `time + 2`, min: `0001-01-01 00:00:00`, max: `0001-01-01 00:00:00`},
-		{expr: `time - '2000-01-01 00:00:00'`, min: `0001-01-01 00:00:00`, max: `0001-01-01 00:00:00`},
-		{expr: `time AND '2000-01-01 00:00:00'`, min: `0001-01-01 00:00:00`, max: `0001-01-01 00:00:00`},
+		{expr: `time`, min: `0001-01-01T00:00:00Z`, max: `0001-01-01T00:00:00Z`},
+		{expr: `time + 2`, min: `0001-01-01T00:00:00Z`, max: `0001-01-01T00:00:00Z`},
+		{expr: `time - '2000-01-01 00:00:00'`, min: `0001-01-01T00:00:00Z`, max: `0001-01-01T00:00:00Z`},
+		{expr: `time AND '2000-01-01 00:00:00'`, min: `0001-01-01T00:00:00Z`, max: `0001-01-01T00:00:00Z`},
 	} {
 		// Extract time range.
 		expr := MustParseExpr(tt.expr)
 		min, max := influxql.TimeRange(expr)
 
 		// Compare with expected min/max.
-		if min := min.Format(influxql.DateTimeFormat); tt.min != min {
+		if min := min.Format(time.RFC3339Nano); tt.min != min {
 			t.Errorf("%d. %s: unexpected min:\n\nexp=%s\n\ngot=%s\n\n", i, tt.expr, tt.min, min)
 			continue
 		}
-		if max := max.Format(influxql.DateTimeFormat); tt.max != max {
+		if max := max.Format(time.RFC3339Nano); tt.max != max {
 			t.Errorf("%d. %s: unexpected max:\n\nexp=%s\n\ngot=%s\n\n", i, tt.expr, tt.max, max)
 			continue
+		}
+	}
+}
+
+// Ensure that we see if a where clause has only time limitations
+func TestSelectStatement_OnlyTimeDimensions(t *testing.T) {
+	var tests = []struct {
+		stmt string
+		exp  bool
+	}{
+		{
+			stmt: `SELECT value FROM myseries WHERE value > 1`,
+			exp:  false,
+		},
+		{
+			stmt: `SELECT value FROM foo WHERE time >= '2000-01-01T00:00:05Z'`,
+			exp:  true,
+		},
+		{
+			stmt: `SELECT value FROM foo WHERE time >= '2000-01-01T00:00:05Z' AND time < '2000-01-01T00:00:05Z'`,
+			exp:  true,
+		},
+		{
+			stmt: `SELECT value FROM foo WHERE time >= '2000-01-01T00:00:05Z' AND asdf = 'bar'`,
+			exp:  false,
+		},
+		{
+			stmt: `SELECT value FROM foo WHERE asdf = 'jkl' AND (time >= '2000-01-01T00:00:05Z' AND time < '2000-01-01T00:00:05Z')`,
+			exp:  false,
+		},
+	}
+
+	for i, tt := range tests {
+		// Parse statement.
+		stmt, err := influxql.NewParser(strings.NewReader(tt.stmt)).ParseStatement()
+		if err != nil {
+			t.Fatalf("invalid statement: %q: %s", tt.stmt, err)
+		}
+		if stmt.(*influxql.SelectStatement).OnlyTimeDimensions() != tt.exp {
+			t.Fatalf("%d. expected statement to return only time dimension to be %t: %s", i, tt.exp, tt.stmt)
 		}
 	}
 }
@@ -163,6 +577,45 @@ func TestRewrite(t *testing.T) {
 	// Verify that everything is flipped.
 	if act := act.String(); act != `2.000 = foo OR 1.000 > time` {
 		t.Fatalf("unexpected result: %s", act)
+	}
+}
+
+// Ensure that the String() value of a statement is parseable
+func TestParseString(t *testing.T) {
+	var tests = []struct {
+		stmt string
+	}{
+		{
+			stmt: `SELECT "cpu load" FROM myseries`,
+		},
+		{
+			stmt: `SELECT "cpu load" FROM "my series"`,
+		},
+		{
+			stmt: `SELECT "cpu\"load" FROM myseries`,
+		},
+		{
+			stmt: `SELECT "cpu'load" FROM myseries`,
+		},
+		{
+			stmt: `SELECT "cpu load" FROM "my\"series"`,
+		},
+		{
+			stmt: `SELECT * FROM myseries`,
+		},
+	}
+
+	for _, tt := range tests {
+		// Parse statement.
+		stmt, err := influxql.NewParser(strings.NewReader(tt.stmt)).ParseStatement()
+		if err != nil {
+			t.Fatalf("invalid statement: %q: %s", tt.stmt, err)
+		}
+
+		_, err = influxql.NewParser(strings.NewReader(stmt.String())).ParseStatement()
+		if err != nil {
+			t.Fatalf("failed to parse string: %v\norig: %v\ngot: %v", err, tt.stmt, stmt.String())
+		}
 	}
 }
 
@@ -244,9 +697,9 @@ func TestReduce(t *testing.T) {
 		{in: `true + false`, out: `true + false`},
 
 		// Time literals.
-		{in: `now() + 2h`, out: `"2000-01-01 02:00:00"`, data: map[string]interface{}{"now()": now}},
-		{in: `now() / 2h`, out: `"2000-01-01 00:00:00" / 2h`, data: map[string]interface{}{"now()": now}},
-		{in: `4µ + now()`, out: `"2000-01-01 00:00:00.000004"`, data: map[string]interface{}{"now()": now}},
+		{in: `now() + 2h`, out: `'2000-01-01T02:00:00Z'`, data: map[string]interface{}{"now()": now}},
+		{in: `now() / 2h`, out: `'2000-01-01T00:00:00Z' / 2h`, data: map[string]interface{}{"now()": now}},
+		{in: `4µ + now()`, out: `'2000-01-01T00:00:00.000004Z'`, data: map[string]interface{}{"now()": now}},
 		{in: `now() = now()`, out: `true`, data: map[string]interface{}{"now()": now}},
 		{in: `now() <> now()`, out: `false`, data: map[string]interface{}{"now()": now}},
 		{in: `now() < now() + 1h`, out: `true`, data: map[string]interface{}{"now()": now}},
@@ -254,7 +707,7 @@ func TestReduce(t *testing.T) {
 		{in: `now() >= now() - 1h`, out: `true`, data: map[string]interface{}{"now()": now}},
 		{in: `now() > now() - 1h`, out: `true`, data: map[string]interface{}{"now()": now}},
 		{in: `now() - (now() - 60s)`, out: `1m`, data: map[string]interface{}{"now()": now}},
-		{in: `now() AND now()`, out: `"2000-01-01 00:00:00" AND "2000-01-01 00:00:00"`, data: map[string]interface{}{"now()": now}},
+		{in: `now() AND now()`, out: `'2000-01-01T00:00:00Z' AND '2000-01-01T00:00:00Z'`, data: map[string]interface{}{"now()": now}},
 		{in: `now()`, out: `now()`},
 
 		// Duration literals.
@@ -297,4 +750,13 @@ type Valuer map[string]interface{}
 func (o Valuer) Value(key string) (v interface{}, ok bool) {
 	v, ok = o[key]
 	return
+}
+
+// mustParseTime parses an IS0-8601 string. Panic on error.
+func mustParseTime(s string) time.Time {
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		panic(err.Error())
+	}
+	return t
 }
